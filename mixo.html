@@ -1,0 +1,1318 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Studio Podcast</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #14161c;
+    color: #e8ebf0;
+    padding: 20px;
+    min-height: 100vh;
+    line-height: 1.4;
+  }
+  .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+  h1 { font-size: 22px; font-weight: 500; }
+  .subtitle { font-size: 13px; color: #8a91a0; margin-top: 2px; }
+  .header-right { display: flex; gap: 8px; align-items: center; }
+  .panel { background: #1c1f27; border: 1px solid #2a2f3a; border-radius: 12px; padding: 16px 20px; margin-bottom: 14px; }
+  .panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
+  .panel-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; color: #8a91a0; font-weight: 600; }
+  select, input[type="text"], input[type="number"] { background: #14161c; color: #e8ebf0; border: 1px solid #3a4050; border-radius: 8px; padding: 9px 12px; font-size: 14px; font-family: inherit; outline: none; transition: border-color 0.15s; }
+  select:focus, input[type="text"]:focus, input[type="number"]:focus { border-color: #3b82f6; }
+  button { background: #2a2f3a; color: #e8ebf0; border: 1px solid #3a4050; border-radius: 8px; padding: 9px 16px; font-size: 14px; font-family: inherit; cursor: pointer; font-weight: 500; transition: all 0.15s; display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+  button:hover:not(:disabled) { background: #353b48; border-color: #4a5060; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.danger { background: #dc2626; border-color: #dc2626; color: #fff; }
+  button.danger:hover:not(:disabled) { background: #ef4444; }
+  button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+  button.primary:hover:not(:disabled) { background: #3b82f6; }
+  button.recording { background: #dc2626; border-color: #dc2626; animation: pulse 1.5s infinite; }
+  button.icon-only { padding: 9px 11px; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
+  button svg { width: 14px; height: 14px; flex-shrink: 0; }
+  .mic-row { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+  .mic-row select { flex: 1; min-width: 200px; }
+  .vu-container { flex: 0 0 140px; height: 12px; background: #0a0c10; border-radius: 6px; overflow: hidden; border: 1px solid #2a2f3a; }
+  .vu-bar { height: 100%; width: 0%; background: linear-gradient(90deg, #4ade80 0%, #4ade80 60%, #fbbf24 75%, #ef4444 95%); transition: width 0.05s linear; }
+  #waveformLive { width: 100%; height: 60px; background: #0a0c10; border-radius: 6px; border: 1px solid #2a2f3a; margin-bottom: 14px; display: none; }
+  #waveformLive.visible { display: block; }
+  .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .timer { font-size: 26px; font-weight: 500; font-variant-numeric: tabular-nums; margin-left: auto; padding: 6px 14px; background: #0a0c10; border-radius: 8px; border: 1px solid #2a2f3a; min-width: 110px; text-align: center; }
+  .timer.live { color: #ef4444; }
+  .mixer { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .channel { background: #14161c; border-radius: 8px; padding: 12px; border: 1px solid #2a2f3a; }
+  .channel-label { font-size: 13px; color: #8a91a0; margin-bottom: 8px; display: flex; justify-content: space-between; }
+  .channel-value { font-variant-numeric: tabular-nums; color: #e8ebf0; font-weight: 500; }
+  input[type="range"] { width: 100%; -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer; }
+  input[type="range"]::-webkit-slider-runnable-track { height: 4px; background: #2a2f3a; border-radius: 2px; }
+  input[type="range"]::-moz-range-track { height: 4px; background: #2a2f3a; border-radius: 2px; }
+  input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; background: #3b82f6; border-radius: 50%; margin-top: -6px; cursor: pointer; }
+  input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; background: #3b82f6; border-radius: 50%; border: none; cursor: pointer; }
+  .bank-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .bank-row select { flex: 1; min-width: 180px; }
+  .pads-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+  .pad { aspect-ratio: 1; background: #2a2f3a; border: 1px solid #3a4050; border-radius: 10px; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 8px; text-align: center; transition: transform 0.08s, box-shadow 0.15s; position: relative; user-select: none; color: #e8ebf0; font-size: 12px; font-family: inherit; overflow: hidden; }
+  .pad:hover { box-shadow: 0 0 0 2px rgba(255,255,255,0.15); }
+  .pad.playing { transform: scale(0.95); box-shadow: 0 0 0 2px rgba(255,255,255,0.5); }
+  .pad.dragging { opacity: 0.4; }
+  .pad.drag-over { box-shadow: 0 0 0 2px #3b82f6; }
+  .pad-shortcut { position: absolute; top: 4px; left: 6px; font-size: 10px; color: rgba(255,255,255,0.7); font-weight: 600; background: rgba(0,0,0,0.3); padding: 1px 5px; border-radius: 4px; }
+  .pad-name { font-weight: 500; line-height: 1.2; word-break: break-word; max-width: 100%; margin-top: 2px; }
+  .pad-duration { font-size: 10px; color: rgba(255,255,255,0.7); margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .pad-loop { position: absolute; bottom: 4px; left: 6px; font-size: 10px; color: #fff; background: rgba(0,0,0,0.4); padding: 1px 5px; border-radius: 4px; display: none; }
+  .pad.loop .pad-loop { display: block; }
+  .pad-progress { position: absolute; bottom: 0; left: 0; height: 3px; background: rgba(255,255,255,0.6); width: 0%; }
+  .pad-actions { position: absolute; top: 4px; right: 4px; display: none; gap: 2px; }
+  .pad:hover .pad-actions { display: flex; }
+  .pad-action-btn { width: 22px; height: 22px; border-radius: 50%; background: rgba(0,0,0,0.5); color: #fff; border: none; cursor: pointer; font-size: 12px; padding: 0; display: flex; align-items: center; justify-content: center; }
+  .pad-action-btn:hover { background: rgba(0,0,0,0.8); }
+  .add-pad { background: #14161c; border: 2px dashed #2a2f3a; color: #8a91a0; font-size: 30px; }
+  .add-pad:hover { background: #1c1f27; color: #e8ebf0; }
+
+  /* === ÉDITEUR === */
+  .editor-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+  .editor-toolbar .timer { margin-left: auto; }
+  .timeline-container { background: #0a0c10; border: 1px solid #2a2f3a; border-radius: 8px; overflow-x: auto; overflow-y: hidden; position: relative; }
+  .timeline-inner { position: relative; }
+  .timeline-track { position: relative; border-bottom: 1px solid #2a2f3a; overflow: hidden; }
+  .timeline-track:last-child { border-bottom: none; }
+  .timeline-track.voice-track { height: 90px; }
+  .timeline-track.events-track { height: 80px; background: #0d1015; }
+  .timeline-track-label { position: absolute; top: 6px; left: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #8a91a0; font-weight: 600; background: rgba(10,12,16,0.85); padding: 2px 6px; border-radius: 3px; z-index: 5; pointer-events: none; }
+  .voice-canvas { display: block; }
+  .event-block { position: absolute; top: 22px; height: 44px; border-radius: 6px; cursor: grab; display: flex; align-items: center; padding: 0 8px; font-size: 11px; font-weight: 500; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.4); overflow: hidden; box-sizing: border-box; border: 1px solid rgba(255,255,255,0.2); white-space: nowrap; transition: box-shadow 0.1s; user-select: none; }
+  .event-block:hover { box-shadow: 0 0 0 2px rgba(255,255,255,0.4); z-index: 10; }
+  .event-block.dragging { cursor: grabbing; box-shadow: 0 0 0 2px #fff; z-index: 20; }
+  .event-block.selected { box-shadow: 0 0 0 2px #fff; z-index: 10; }
+  .event-block-name { pointer-events: none; overflow: hidden; text-overflow: ellipsis; }
+  .event-block-del { position: absolute; top: 2px; right: 2px; width: 16px; height: 16px; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; border: none; font-size: 11px; line-height: 1; cursor: pointer; display: none; align-items: center; justify-content: center; padding: 0; }
+  .event-block:hover .event-block-del { display: flex; }
+  .timeline-ruler { height: 22px; background: #14161c; border-bottom: 1px solid #2a2f3a; position: relative; font-size: 10px; color: #6a7080; font-variant-numeric: tabular-nums; overflow: hidden; }
+  .ruler-tick { position: absolute; top: 0; bottom: 0; width: 1px; background: #2a2f3a; }
+  .ruler-label { position: absolute; top: 4px; transform: translateX(-50%); background: #14161c; padding: 0 4px; }
+  .playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: #fbbf24; pointer-events: none; z-index: 30; display: none; }
+  .playhead.visible { display: block; }
+  .zoom-controls { display: flex; gap: 4px; align-items: center; font-size: 12px; color: #8a91a0; }
+  .zoom-controls button { padding: 4px 9px; font-size: 12px; }
+  .editor-info { font-size: 12px; color: #8a91a0; margin-top: 8px; line-height: 1.5; }
+  #exportsList { display: flex; flex-direction: column; gap: 8px; }
+  .export-item { background: #14161c; border: 1px solid #2a2f3a; border-radius: 8px; padding: 10px 12px; font-size: 13px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .export-item-label { font-weight: 500; flex: 1; min-width: 150px; }
+  .export-item-type { color: #8a91a0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .export-item audio { width: 100%; max-width: 260px; height: 32px; }
+  .export-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: none; align-items: center; justify-content: center; z-index: 100; padding: 20px; }
+  .modal-bg.visible { display: flex; }
+  .modal { background: #1c1f27; border-radius: 12px; padding: 24px; max-width: 440px; width: 100%; border: 1px solid #2a2f3a; }
+  .modal h3 { margin-bottom: 16px; font-weight: 500; font-size: 18px; }
+  .modal label { display: block; font-size: 13px; color: #8a91a0; margin-bottom: 6px; margin-top: 10px; }
+  .modal input[type="text"] { width: 100%; }
+  .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+  .modal-color-picker { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; margin-top: 6px; }
+  .color-swatch { aspect-ratio: 1; border-radius: 6px; cursor: pointer; border: 2px solid transparent; }
+  .color-swatch.selected { border-color: #fff; }
+  .status { padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 12px; display: none; }
+  .status.visible { display: block; }
+  .status.error { background: #4a1d1d; color: #fca5a5; border: 1px solid #7f2828; }
+  .status.info { background: #1d3a4a; color: #93c5fd; border: 1px solid #2e5a7a; }
+  .status.success { background: #1d4a2e; color: #86efac; border: 1px solid #2e7a40; }
+  .progress-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: none; align-items: center; justify-content: center; z-index: 200; }
+  .progress-overlay.visible { display: flex; }
+  .progress-box { background: #1c1f27; border: 1px solid #2a2f3a; border-radius: 12px; padding: 32px; min-width: 300px; text-align: center; }
+  .progress-bar { height: 8px; background: #14161c; border-radius: 4px; overflow: hidden; margin-top: 16px; }
+  .progress-fill { height: 100%; background: #3b82f6; width: 0%; transition: width 0.2s; }
+  .hidden { display: none !important; }
+  .file-input { display: none; }
+  @media (max-width: 600px) {
+    body { padding: 12px; }
+    .panel { padding: 14px; }
+    h1 { font-size: 19px; }
+    .timer { font-size: 22px; min-width: 90px; }
+    .mixer { grid-template-columns: 1fr; }
+    .pads-grid { grid-template-columns: repeat(auto-fill, minmax(95px, 1fr)); }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>Studio Podcast</h1>
+    <div class="subtitle">Voix + bruitages, avec édition après enregistrement</div>
+  </div>
+  <div class="header-right">
+    <button id="btnHelp" class="icon-only" title="Aide">?</button>
+  </div>
+</div>
+
+<div id="status" class="status"></div>
+
+<div class="panel">
+  <div class="panel-header"><div class="panel-title">Microphone</div></div>
+  <div class="mic-row">
+    <select id="micSelect"><option>Chargement…</option></select>
+    <div class="vu-container"><div id="vuBar" class="vu-bar"></div></div>
+  </div>
+  <canvas id="waveformLive" width="800" height="60"></canvas>
+  <div class="controls">
+    <button id="btnRec" class="danger"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="6"/></svg>Enregistrer</button>
+    <button id="btnPause" disabled><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>Pause</button>
+    <button id="btnStop" disabled><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg>Stop</button>
+    <div id="timer" class="timer">00:00</div>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-header"><div class="panel-title">Mixage</div></div>
+  <div class="mixer">
+    <div class="channel">
+      <div class="channel-label"><span>Micro (voix)</span><span class="channel-value" id="micVolVal">100%</span></div>
+      <input type="range" id="micVol" min="0" max="150" value="100">
+    </div>
+    <div class="channel">
+      <div class="channel-label"><span>Pads (bruitages)</span><span class="channel-value" id="padVolVal">80%</span></div>
+      <input type="range" id="padVol" min="0" max="150" value="80">
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-header">
+    <div class="panel-title">Pads</div>
+    <div class="bank-row">
+      <select id="bankSelect"></select>
+      <button id="btnNewBank" class="icon-only" title="Nouvelle banque">+</button>
+      <button id="btnRenameBank" class="icon-only" title="Renommer">✎</button>
+      <button id="btnDeleteBank" class="icon-only" title="Supprimer">🗑</button>
+    </div>
+  </div>
+  <div id="padsGrid" class="pads-grid"></div>
+</div>
+
+<!-- ÉDITEUR (apparaît après stop) -->
+<div id="editorPanel" class="panel hidden">
+  <div class="panel-header">
+    <div class="panel-title">Édition de la prise</div>
+    <div class="zoom-controls">
+      <span>Zoom</span>
+      <button id="btnZoomOut">−</button>
+      <button id="btnZoomFit">Ajuster</button>
+      <button id="btnZoomIn">+</button>
+    </div>
+  </div>
+  <div class="editor-toolbar">
+    <button id="btnPlayMix" class="primary"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 20,12 6,20"/></svg>Lecture</button>
+    <button id="btnStopMix" disabled><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg>Stop</button>
+    <button id="btnExportMix" class="primary"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2v13M5 12l7 7 7-7M5 22h14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Exporter MP3</button>
+    <button id="btnDiscardTake">Nouvelle prise</button>
+    <div id="editorTimer" class="timer">00:00</div>
+  </div>
+  <div class="timeline-container" id="timelineContainer">
+    <div class="timeline-inner" id="timelineInner">
+      <div id="timelineRuler" class="timeline-ruler"></div>
+      <div class="timeline-track voice-track">
+        <div class="timeline-track-label">Voix</div>
+        <canvas id="voiceCanvas" class="voice-canvas"></canvas>
+      </div>
+      <div class="timeline-track events-track">
+        <div class="timeline-track-label">Bruitages</div>
+        <div id="eventsLayer" style="position:absolute; inset:0;"></div>
+      </div>
+      <div id="playhead" class="playhead"></div>
+    </div>
+  </div>
+  <div class="editor-info">
+    Glisse un bloc pour le déplacer. Survole-le pour le supprimer (×) ou utilise <kbd style="background:#2a2f3a;padding:1px 4px;border-radius:3px">Suppr</kbd>. Clique sur la timeline pour repositionner la tête de lecture.
+  </div>
+</div>
+
+<!-- Exports finalisés -->
+<div id="exportsPanel" class="panel hidden">
+  <div class="panel-header">
+    <div class="panel-title">Exports</div>
+    <button id="btnClearExports">Tout effacer</button>
+  </div>
+  <div id="exportsList"></div>
+</div>
+
+<!-- Modals -->
+<div id="modal" class="modal-bg">
+  <div class="modal">
+    <h3 id="modalTitle">Ajouter un son</h3>
+    <label>Nom du pad</label>
+    <input type="text" id="modalName" placeholder="ex: applaudissements">
+    <label>Couleur</label>
+    <div class="modal-color-picker" id="colorPicker"></div>
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:14px">
+      <input type="checkbox" id="modalLoop"> Lecture en boucle
+    </label>
+    <div class="modal-actions">
+      <button id="modalCancel">Annuler</button>
+      <button id="modalOk" class="primary">Valider</button>
+    </div>
+  </div>
+</div>
+
+<div id="bankModal" class="modal-bg">
+  <div class="modal">
+    <h3 id="bankModalTitle">Nouvelle banque</h3>
+    <label>Nom</label>
+    <input type="text" id="bankModalName" placeholder="ex: Journal du matin">
+    <div class="modal-actions">
+      <button id="bankModalCancel">Annuler</button>
+      <button id="bankModalOk" class="primary">Valider</button>
+    </div>
+  </div>
+</div>
+
+<div id="helpModal" class="modal-bg">
+  <div class="modal" style="max-width: 520px">
+    <h3>Raccourcis clavier</h3>
+    <div style="font-size: 14px; line-height: 1.9;">
+      <div><kbd style="background:#2a2f3a;padding:2px 6px;border-radius:4px;font-size:12px">Espace</kbd> &nbsp; Enregistrer / Pause (ou Lecture/Pause dans l'éditeur)</div>
+      <div><kbd style="background:#2a2f3a;padding:2px 6px;border-radius:4px;font-size:12px">Échap</kbd> &nbsp; Stop</div>
+      <div><kbd style="background:#2a2f3a;padding:2px 6px;border-radius:4px;font-size:12px">1</kbd>–<kbd style="background:#2a2f3a;padding:2px 6px;border-radius:4px;font-size:12px">9</kbd>, <kbd style="background:#2a2f3a;padding:2px 6px;border-radius:4px;font-size:12px">0</kbd> &nbsp; Déclencher les 10 premiers pads</div>
+      <div><kbd style="background:#2a2f3a;padding:2px 6px;border-radius:4px;font-size:12px">Suppr</kbd> &nbsp; Supprimer le bruitage sélectionné</div>
+    </div>
+    <h3 style="margin-top: 20px">Workflow</h3>
+    <div style="font-size: 13px; color: #b0b8c5; line-height: 1.7;">
+      1. Enregistre ta voix en déclenchant les pads.<br>
+      2. À la fin, l'éditeur s'ouvre : repositionne ou supprime les bruitages mal placés.<br>
+      3. Exporte en MP3 — un seul fichier prêt à publier.
+    </div>
+    <div class="modal-actions">
+      <button id="helpModalClose" class="primary">Fermer</button>
+    </div>
+  </div>
+</div>
+
+<div id="progressOverlay" class="progress-overlay">
+  <div class="progress-box">
+    <div id="progressLabel" style="font-size: 14px;">Conversion…</div>
+    <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
+    <div id="progressDetail" style="font-size: 12px; color: #8a91a0; margin-top: 8px;"></div>
+  </div>
+</div>
+
+<input type="file" id="fileInput" class="file-input" accept="audio/*">
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
+
+<script>
+'use strict';
+
+const PAD_COLORS = ['#2563eb','#7c3aed','#db2777','#dc2626','#ea580c','#ca8a04','#16a34a','#0891b2','#64748b','#9333ea','#e11d48','#0d9488','#f59e0b','#10b981','#6366f1','#ec4899'];
+const DB_NAME = 'StudioPodcastDB';
+const DB_VERSION = 1;
+const STORE_BANKS = 'banks';
+const STORE_PADS = 'pads';
+
+const state = {
+  audioCtx: null,
+  micStream: null, micSource: null, micGain: null, padsGain: null, micAnalyser: null,
+  micRecorder: null, micChunks: [], destMic: null,
+  isRecording: false, isPaused: false,
+  startTime: 0, elapsedBeforePause: 0,
+  recStartCtxTime: 0, pausedAt: 0, pausedDuration: 0,
+  timerInterval: null,
+  banks: [], currentBankId: null,
+  pads: [], padBuffers: new Map(), activeSources: new Map(),
+  pendingFile: null, editingPadId: null, selectedColor: null, draggedPadId: null,
+  db: null,
+  take: null,
+  zoomPxPerSec: 60,
+  selectedEventId: null,
+  playback: { active: false, startCtxTime: 0, startAtTime: 0, sources: [], rafId: null },
+};
+
+// ===================== IndexedDB =====================
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(STORE_BANKS)) db.createObjectStore(STORE_BANKS, { keyPath: 'id' });
+      if (!db.objectStoreNames.contains(STORE_PADS)) {
+        const store = db.createObjectStore(STORE_PADS, { keyPath: 'id' });
+        store.createIndex('bankId', 'bankId', { unique: false });
+      }
+    };
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror = e => reject(e.target.error);
+  });
+}
+function dbPut(store, value) { return new Promise((resolve, reject) => { const tx = state.db.transaction(store, 'readwrite'); tx.objectStore(store).put(value); tx.oncomplete = () => resolve(); tx.onerror = e => reject(e.target.error); }); }
+function dbDelete(store, key) { return new Promise((resolve, reject) => { const tx = state.db.transaction(store, 'readwrite'); tx.objectStore(store).delete(key); tx.oncomplete = () => resolve(); tx.onerror = e => reject(e.target.error); }); }
+function dbGetAll(store) { return new Promise((resolve, reject) => { const tx = state.db.transaction(store, 'readonly'); const req = tx.objectStore(store).getAll(); req.onsuccess = () => resolve(req.result); req.onerror = e => reject(e.target.error); }); }
+async function dbClearBankPads(bankId) {
+  const tx = state.db.transaction(STORE_PADS, 'readwrite');
+  const req = tx.objectStore(STORE_PADS).index('bankId').openCursor(IDBKeyRange.only(bankId));
+  return new Promise((resolve, reject) => {
+    req.onsuccess = e => { const c = e.target.result; if (c) { c.delete(); c.continue(); } else resolve(); };
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+// ===================== Audio =====================
+function ensureAudioCtx() {
+  if (state.audioCtx) return;
+  state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  state.micGain = state.audioCtx.createGain();
+  state.padsGain = state.audioCtx.createGain();
+  state.padsGain.gain.value = 0.8;
+  state.micAnalyser = state.audioCtx.createAnalyser();
+  state.micAnalyser.fftSize = 1024;
+  state.destMic = state.audioCtx.createMediaStreamDestination();
+  state.micGain.connect(state.micAnalyser);
+  state.micGain.connect(state.destMic);
+  state.padsGain.connect(state.audioCtx.destination);
+  startVuMeter();
+}
+
+async function listMics() {
+  try {
+    const tmp = await navigator.mediaDevices.getUserMedia({ audio: true });
+    tmp.getTracks().forEach(t => t.stop());
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const mics = devices.filter(d => d.kind === 'audioinput');
+    const select = document.getElementById('micSelect');
+    select.innerHTML = '';
+    if (mics.length === 0) { select.innerHTML = '<option>Aucun micro détecté</option>'; return; }
+    mics.forEach((m, i) => {
+      const opt = document.createElement('option');
+      opt.value = m.deviceId;
+      opt.textContent = m.label || `Micro ${i+1}`;
+      select.appendChild(opt);
+    });
+    await setupMic(mics[0].deviceId);
+  } catch (e) {
+    showStatus('Accès au micro refusé.', 'error');
+  }
+}
+
+async function setupMic(deviceId) {
+  if (state.micStream) state.micStream.getTracks().forEach(t => t.stop());
+  state.micStream = await navigator.mediaDevices.getUserMedia({
+    audio: { deviceId: deviceId ? { exact: deviceId } : undefined, echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+  });
+  ensureAudioCtx();
+  if (state.micSource) state.micSource.disconnect();
+  state.micSource = state.audioCtx.createMediaStreamSource(state.micStream);
+  state.micSource.connect(state.micGain);
+}
+
+function startVuMeter() {
+  const bar = document.getElementById('vuBar');
+  const canvas = document.getElementById('waveformLive');
+  const ctx = canvas.getContext('2d');
+  const buf = new Uint8Array(state.micAnalyser.fftSize);
+  function resize() { canvas.width = canvas.clientWidth * window.devicePixelRatio; canvas.height = canvas.clientHeight * window.devicePixelRatio; }
+  resize();
+  window.addEventListener('resize', resize);
+  function loop() {
+    state.micAnalyser.getByteTimeDomainData(buf);
+    let max = 0;
+    for (let i = 0; i < buf.length; i++) { const v = Math.abs(buf[i] - 128) / 128; if (v > max) max = v; }
+    bar.style.width = Math.min(100, max * 180) + '%';
+    if (state.isRecording && !state.isPaused) {
+      const W = canvas.width, H = canvas.height;
+      ctx.fillStyle = '#0a0c10'; ctx.fillRect(0, 0, W, H);
+      ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 2; ctx.beginPath();
+      const step = W / buf.length;
+      for (let i = 0; i < buf.length; i++) {
+        const x = i * step, y = (buf[i] / 255) * H;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    requestAnimationFrame(loop);
+  }
+  loop();
+}
+
+// ===================== Enregistrement =====================
+function pickMimeType() {
+  const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
+  return types.find(t => MediaRecorder.isTypeSupported(t)) || '';
+}
+
+async function startRecording() {
+  if (!state.audioCtx) { showStatus('Sélectionne un micro d\'abord.', 'error'); return; }
+  await state.audioCtx.resume();
+
+  state.take = { voiceBlob: null, voiceBuffer: null, events: [], duration: 0 };
+
+  const mime = pickMimeType();
+  state.micChunks = [];
+  try {
+    state.micRecorder = new MediaRecorder(state.destMic.stream, { mimeType: mime });
+  } catch (e) {
+    showStatus('Format non supporté.', 'error'); return;
+  }
+  state.micRecorder.ondataavailable = e => { if (e.data.size > 0) state.micChunks.push(e.data); };
+  state.micRecorder.onstop = onRecordingStop;
+  state.micRecorder.start(100);
+
+  state.isRecording = true; state.isPaused = false;
+  state.startTime = performance.now();
+  state.elapsedBeforePause = 0;
+  state.recStartCtxTime = state.audioCtx.currentTime;
+  state.pausedDuration = 0;
+
+  document.getElementById('btnRec').classList.add('recording');
+  document.getElementById('btnRec').disabled = true;
+  document.getElementById('btnPause').disabled = false;
+  document.getElementById('btnStop').disabled = false;
+  document.getElementById('timer').classList.add('live');
+  document.getElementById('waveformLive').classList.add('visible');
+  document.getElementById('editorPanel').classList.add('hidden');
+
+  state.timerInterval = setInterval(updateTimer, 100);
+}
+
+function pauseRecording() {
+  if (!state.isRecording) return;
+  if (state.isPaused) {
+    state.micRecorder.resume();
+    state.pausedDuration += state.audioCtx.currentTime - state.pausedAt;
+    state.startTime = performance.now();
+    state.isPaused = false;
+    document.getElementById('btnPause').innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>Pause';
+    state.timerInterval = setInterval(updateTimer, 100);
+  } else {
+    state.micRecorder.pause();
+    state.pausedAt = state.audioCtx.currentTime;
+    state.elapsedBeforePause += performance.now() - state.startTime;
+    state.isPaused = true;
+    document.getElementById('btnPause').innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 20,12 6,20"/></svg>Reprendre';
+    clearInterval(state.timerInterval);
+  }
+}
+
+function stopRecording() {
+  if (!state.isRecording) return;
+  state.micRecorder.stop();
+  state.isRecording = false; state.isPaused = false;
+  clearInterval(state.timerInterval);
+
+  document.getElementById('btnRec').classList.remove('recording');
+  document.getElementById('btnRec').disabled = false;
+  document.getElementById('btnPause').disabled = true;
+  document.getElementById('btnPause').innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>Pause';
+  document.getElementById('btnStop').disabled = true;
+  document.getElementById('timer').classList.remove('live');
+  document.getElementById('timer').textContent = '00:00';
+  document.getElementById('waveformLive').classList.remove('visible');
+}
+
+function updateTimer() {
+  const elapsed = state.elapsedBeforePause + (performance.now() - state.startTime);
+  document.getElementById('timer').textContent = formatTime(elapsed / 1000);
+}
+
+async function onRecordingStop() {
+  setTimeout(async () => {
+    const mime = state.micRecorder.mimeType || 'audio/webm';
+    const voiceBlob = new Blob(state.micChunks, { type: mime });
+    let voiceBuffer = null;
+    try {
+      const ab = await voiceBlob.arrayBuffer();
+      voiceBuffer = await state.audioCtx.decodeAudioData(ab.slice(0));
+    } catch (e) {
+      showStatus('Erreur lors du décodage de la voix : ' + e.message, 'error');
+      return;
+    }
+    state.take.voiceBlob = voiceBlob;
+    state.take.voiceBuffer = voiceBuffer;
+    state.take.duration = Math.max(voiceBuffer.duration, ...state.take.events.map(e => e.time + e.duration), 0);
+    showEditor();
+    showStatus('Prise terminée. Édite la timeline ou exporte directement.', 'success');
+  }, 200);
+}
+
+// ===================== Banques / Pads =====================
+async function loadBanks() {
+  let banks = await dbGetAll(STORE_BANKS);
+  if (banks.length === 0) {
+    const b = { id: 'b' + Date.now(), name: 'Banque par défaut' };
+    await dbPut(STORE_BANKS, b);
+    banks = [b];
+  }
+  state.banks = banks;
+  const last = localStorage.getItem('studio.currentBankId');
+  state.currentBankId = (last && banks.find(b => b.id === last)) ? last : banks[0].id;
+  renderBankSelect();
+  await loadPadsForBank(state.currentBankId);
+}
+function renderBankSelect() {
+  const sel = document.getElementById('bankSelect');
+  sel.innerHTML = '';
+  state.banks.forEach(b => {
+    const opt = document.createElement('option');
+    opt.value = b.id; opt.textContent = b.name;
+    if (b.id === state.currentBankId) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+async function switchBank(bankId) {
+  state.activeSources.forEach(a => { try { a.source.stop(); } catch(e){} });
+  state.activeSources.clear();
+  state.currentBankId = bankId;
+  localStorage.setItem('studio.currentBankId', bankId);
+  state.padBuffers.clear();
+  await loadPadsForBank(bankId);
+}
+async function createBank(name) {
+  const b = { id: 'b' + Date.now(), name };
+  await dbPut(STORE_BANKS, b);
+  state.banks.push(b);
+  await switchBank(b.id);
+  renderBankSelect();
+}
+async function renameBank(id, n) {
+  const b = state.banks.find(x => x.id === id); if (!b) return;
+  b.name = n; await dbPut(STORE_BANKS, b); renderBankSelect();
+}
+async function deleteBank(id) {
+  if (state.banks.length <= 1) { showStatus('Impossible de supprimer la dernière banque.', 'error'); return; }
+  await dbClearBankPads(id);
+  await dbDelete(STORE_BANKS, id);
+  state.banks = state.banks.filter(b => b.id !== id);
+  await switchBank(state.banks[0].id);
+  renderBankSelect();
+}
+
+async function loadPadsForBank(bankId) {
+  const all = await dbGetAll(STORE_PADS);
+  state.pads = all.filter(p => p.bankId === bankId).sort((a,b) => (a.order||0) - (b.order||0));
+  ensureAudioCtx();
+  for (const pad of state.pads) {
+    if (!state.padBuffers.has(pad.id) && pad.blob) {
+      try {
+        const ab = await pad.blob.arrayBuffer();
+        const buf = await state.audioCtx.decodeAudioData(ab.slice(0));
+        state.padBuffers.set(pad.id, buf);
+      } catch (e) { console.warn('Erreur décodage pad', pad.name, e); }
+    }
+  }
+  renderPads();
+}
+
+function renderPads() {
+  const grid = document.getElementById('padsGrid');
+  grid.innerHTML = '';
+  state.pads.forEach((pad, i) => {
+    const el = document.createElement('div');
+    el.className = 'pad' + (pad.loop ? ' loop' : '');
+    el.style.background = pad.color;
+    el.dataset.id = pad.id;
+    el.draggable = true;
+    const sc = i < 10 ? (i === 9 ? '0' : String(i+1)) : '';
+    el.innerHTML = `
+      ${sc ? `<div class="pad-shortcut">${sc}</div>` : ''}
+      <div class="pad-actions">
+        <button class="pad-action-btn" data-edit="${pad.id}" title="Modifier">✎</button>
+        <button class="pad-action-btn" data-del="${pad.id}" title="Supprimer">×</button>
+      </div>
+      <div class="pad-name">${escapeHtml(pad.name)}</div>
+      <div class="pad-duration">${formatDuration(pad.duration)}</div>
+      <div class="pad-loop">⟳ boucle</div>
+      <div class="pad-progress" data-progress="${pad.id}"></div>
+    `;
+    el.addEventListener('click', e => {
+      if (e.target.closest('.pad-actions')) return;
+      triggerPad(pad.id);
+    });
+    el.addEventListener('dragstart', e => { state.draggedPadId = pad.id; el.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; });
+    el.addEventListener('dragend', () => { el.classList.remove('dragging'); document.querySelectorAll('.pad').forEach(p => p.classList.remove('drag-over')); });
+    el.addEventListener('dragover', e => { e.preventDefault(); if (state.draggedPadId && state.draggedPadId !== pad.id) el.classList.add('drag-over'); });
+    el.addEventListener('dragleave', () => el.classList.remove('drag-over'));
+    el.addEventListener('drop', e => { e.preventDefault(); el.classList.remove('drag-over'); if (state.draggedPadId && state.draggedPadId !== pad.id) reorderPads(state.draggedPadId, pad.id); });
+    grid.appendChild(el);
+  });
+  const add = document.createElement('button');
+  add.className = 'pad add-pad';
+  add.innerHTML = '+';
+  add.title = 'Ajouter un son';
+  add.addEventListener('click', () => document.getElementById('fileInput').click());
+  grid.appendChild(add);
+  grid.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); deletePad(b.dataset.del); }));
+  grid.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); openPadModal(b.dataset.edit); }));
+}
+
+async function reorderPads(d, t) {
+  const di = state.pads.findIndex(p => p.id === d);
+  const ti = state.pads.findIndex(p => p.id === t);
+  if (di < 0 || ti < 0) return;
+  const [m] = state.pads.splice(di, 1);
+  state.pads.splice(ti, 0, m);
+  for (let i = 0; i < state.pads.length; i++) {
+    state.pads[i].order = i;
+    await dbPut(STORE_PADS, state.pads[i]);
+  }
+  renderPads();
+}
+
+async function addPad(file, name, color, loop) {
+  try {
+    ensureAudioCtx();
+    const ab = await file.arrayBuffer();
+    const blob = new Blob([ab], { type: file.type || 'audio/mpeg' });
+    const buf = await state.audioCtx.decodeAudioData(ab.slice(0));
+    const pad = {
+      id: 'p' + Date.now() + Math.random().toString(36).slice(2,6),
+      bankId: state.currentBankId,
+      name: name || file.name.replace(/\.[^/.]+$/, ''),
+      color: color || PAD_COLORS[state.pads.length % PAD_COLORS.length],
+      loop: !!loop, volume: 1, order: state.pads.length,
+      blob, duration: buf.duration,
+    };
+    await dbPut(STORE_PADS, pad);
+    state.pads.push(pad);
+    state.padBuffers.set(pad.id, buf);
+    renderPads();
+  } catch (e) {
+    showStatus("Impossible de lire ce fichier : " + e.message, 'error');
+  }
+}
+
+async function updatePad(id, changes) {
+  const pad = state.pads.find(p => p.id === id); if (!pad) return;
+  Object.assign(pad, changes);
+  await dbPut(STORE_PADS, pad);
+  renderPads();
+}
+
+function triggerPad(id) {
+  const pad = state.pads.find(p => p.id === id);
+  const buf = state.padBuffers.get(id);
+  if (!pad || !buf) return;
+
+  // Log événement si enregistrement
+  if (state.isRecording && !state.isPaused) {
+    const t = state.audioCtx.currentTime - state.recStartCtxTime - state.pausedDuration;
+    state.take.events.push({
+      id: 'e' + Date.now() + Math.random().toString(36).slice(2,5),
+      padId: pad.id, padName: pad.name, color: pad.color,
+      time: Math.max(0, t), duration: buf.duration,
+    });
+  }
+
+  // Toggle play
+  if (state.activeSources.has(id)) {
+    const a = state.activeSources.get(id);
+    try { a.source.stop(); } catch(e) {}
+    state.activeSources.delete(id);
+    updatePadVisual(id, false);
+    return;
+  }
+
+  const src = state.audioCtx.createBufferSource();
+  src.buffer = buf;
+  src.loop = !!pad.loop;
+  src.connect(state.padsGain);
+  src.start();
+  state.activeSources.set(id, { source: src, startedAt: state.audioCtx.currentTime, duration: buf.duration, loop: pad.loop });
+  updatePadVisual(id, true);
+  src.onended = () => { state.activeSources.delete(id); updatePadVisual(id, false); };
+  animatePadProgress(id);
+}
+
+function updatePadVisual(id, playing) {
+  const el = document.querySelector(`.pad[data-id="${id}"]`);
+  if (!el) return;
+  el.classList.toggle('playing', playing);
+  if (!playing) { const p = el.querySelector('[data-progress]'); if (p) p.style.width = '0%'; }
+}
+
+function animatePadProgress(id) {
+  const el = document.querySelector(`.pad[data-id="${id}"] [data-progress]`);
+  if (!el) return;
+  function loop() {
+    const cur = state.activeSources.get(id);
+    if (!cur) return;
+    let pct;
+    if (cur.loop) pct = (((state.audioCtx.currentTime - cur.startedAt) % cur.duration) / cur.duration) * 100;
+    else pct = Math.min(100, ((state.audioCtx.currentTime - cur.startedAt) / cur.duration) * 100);
+    el.style.width = pct + '%';
+    if (state.activeSources.has(id)) requestAnimationFrame(loop);
+  }
+  loop();
+}
+
+async function deletePad(id) {
+  if (!confirm('Supprimer ce pad ?')) return;
+  if (state.activeSources.has(id)) { try { state.activeSources.get(id).source.stop(); } catch(e){} state.activeSources.delete(id); }
+  await dbDelete(STORE_PADS, id);
+  state.pads = state.pads.filter(p => p.id !== id);
+  state.padBuffers.delete(id);
+  renderPads();
+}
+
+// ===================== ÉDITEUR TIMELINE =====================
+function showEditor() {
+  document.getElementById('editorPanel').classList.remove('hidden');
+  // Zoom auto pour que tout rentre la première fois
+  setTimeout(() => {
+    const w = document.getElementById('timelineContainer').clientWidth - 30;
+    state.zoomPxPerSec = Math.max(20, w / Math.max(state.take.duration, 5));
+    renderTimeline();
+    document.getElementById('editorPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 50);
+}
+function hideEditor() {
+  document.getElementById('editorPanel').classList.add('hidden');
+  stopMixPlayback();
+  state.take = null;
+}
+
+function getTimelineWidth() {
+  if (!state.take) return 800;
+  return Math.max(400, state.take.duration * state.zoomPxPerSec + 40);
+}
+
+function renderTimeline() {
+  if (!state.take) return;
+  const w = getTimelineWidth();
+  document.getElementById('timelineInner').style.width = w + 'px';
+  document.getElementById('timelineRuler').style.width = w + 'px';
+  document.querySelectorAll('.timeline-track').forEach(el => el.style.width = w + 'px');
+  renderRuler(w);
+  renderVoiceWaveform(w);
+  renderEventBlocks();
+  updateEditorTimer();
+}
+
+function renderRuler(w) {
+  const ruler = document.getElementById('timelineRuler');
+  ruler.innerHTML = '';
+  const dur = state.take.duration;
+  const candidates = [0.5, 1, 2, 5, 10, 30, 60];
+  let step = 1;
+  for (const c of candidates) { if (c * state.zoomPxPerSec >= 50) { step = c; break; } }
+  for (let t = 0; t <= dur; t += step) {
+    const x = t * state.zoomPxPerSec;
+    const tick = document.createElement('div');
+    tick.className = 'ruler-tick';
+    tick.style.left = x + 'px';
+    ruler.appendChild(tick);
+    const lab = document.createElement('div');
+    lab.className = 'ruler-label';
+    lab.style.left = x + 'px';
+    lab.textContent = formatTime(t);
+    ruler.appendChild(lab);
+  }
+}
+
+function renderVoiceWaveform(w) {
+  const canvas = document.getElementById('voiceCanvas');
+  const buf = state.take.voiceBuffer; if (!buf) return;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.style.width = w + 'px';
+  canvas.style.height = '90px';
+  canvas.width = w * dpr;
+  canvas.height = 90 * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.scale(dpr, dpr);
+  const data = buf.getChannelData(0);
+  // On affiche la forme d'onde sur la portion correspondant à la durée de la voix uniquement
+  const voiceWidth = buf.duration * state.zoomPxPerSec;
+  const samplesPerPx = data.length / Math.max(voiceWidth, 1);
+  const H = 90, mid = H / 2;
+  ctx.fillStyle = '#0a0c10';
+  ctx.fillRect(0, 0, w, H);
+  ctx.fillStyle = '#3b82f6';
+  for (let x = 0; x < voiceWidth; x++) {
+    const s = Math.floor(x * samplesPerPx);
+    const e = Math.floor((x + 1) * samplesPerPx);
+    let min = 1, max = -1;
+    for (let i = s; i < e; i++) {
+      const v = data[i] || 0;
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+    const y1 = mid + min * mid * 0.9;
+    const y2 = mid + max * mid * 0.9;
+    ctx.fillRect(x, y1, 1, Math.max(1, y2 - y1));
+  }
+}
+
+function renderEventBlocks() {
+  const layer = document.getElementById('eventsLayer');
+  layer.innerHTML = '';
+  state.take.events.forEach(ev => {
+    const block = document.createElement('div');
+    block.className = 'event-block' + (ev.id === state.selectedEventId ? ' selected' : '');
+    block.style.left = (ev.time * state.zoomPxPerSec) + 'px';
+    block.style.width = Math.max(20, ev.duration * state.zoomPxPerSec) + 'px';
+    block.style.background = ev.color;
+    block.dataset.id = ev.id;
+    block.innerHTML = `
+      <span class="event-block-name">${escapeHtml(ev.padName)}</span>
+      <button class="event-block-del" data-del="${ev.id}">×</button>
+    `;
+    layer.appendChild(block);
+    block.addEventListener('click', e => {
+      if (e.target.dataset.del) return;
+      state.selectedEventId = ev.id;
+      renderEventBlocks();
+    });
+    block.querySelector('.event-block-del').addEventListener('click', e => { e.stopPropagation(); deleteEvent(ev.id); });
+    makeEventDraggable(block, ev);
+  });
+}
+
+function makeEventDraggable(block, ev) {
+  let startX, startTime;
+  function onDown(clientX, e) {
+    if (e && e.target.dataset.del) return;
+    if (e && e.preventDefault) e.preventDefault();
+    startX = clientX;
+    startTime = ev.time;
+    block.classList.add('dragging');
+    state.selectedEventId = ev.id;
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onUp);
+    document.addEventListener('touchmove', onTouchMove, { passive: true });
+    document.addEventListener('touchend', onUp);
+  }
+  function moveTo(clientX) {
+    const dx = clientX - startX;
+    const dt = dx / state.zoomPxPerSec;
+    const newTime = Math.max(0, startTime + dt);
+    ev.time = newTime;
+    block.style.left = (newTime * state.zoomPxPerSec) + 'px';
+    const required = Math.max(state.take.voiceBuffer.duration, ...state.take.events.map(e => e.time + e.duration));
+    if (required > state.take.duration) state.take.duration = required;
+  }
+  function onMouseMove(e) { moveTo(e.clientX); }
+  function onTouchMove(e) { moveTo(e.touches[0].clientX); }
+  function onUp() {
+    block.classList.remove('dragging');
+    document.removeEventListener('mousemove', onMouseMove);
+    document.removeEventListener('mouseup', onUp);
+    document.removeEventListener('touchmove', onTouchMove);
+    document.removeEventListener('touchend', onUp);
+    renderTimeline();
+  }
+  block.addEventListener('mousedown', e => onDown(e.clientX, e));
+  block.addEventListener('touchstart', e => { if (e.target.dataset.del) return; onDown(e.touches[0].clientX, null); }, { passive: true });
+}
+
+function deleteEvent(id) {
+  state.take.events = state.take.events.filter(e => e.id !== id);
+  if (state.selectedEventId === id) state.selectedEventId = null;
+  state.take.duration = Math.max(state.take.voiceBuffer.duration, ...state.take.events.map(e => e.time + e.duration), 0);
+  renderTimeline();
+}
+
+function updateEditorTimer() {
+  document.getElementById('editorTimer').textContent = formatTime(state.take ? state.take.duration : 0);
+}
+
+document.getElementById('btnZoomIn').addEventListener('click', () => { state.zoomPxPerSec = Math.min(400, state.zoomPxPerSec * 1.5); renderTimeline(); });
+document.getElementById('btnZoomOut').addEventListener('click', () => { state.zoomPxPerSec = Math.max(10, state.zoomPxPerSec / 1.5); renderTimeline(); });
+document.getElementById('btnZoomFit').addEventListener('click', () => {
+  if (!state.take) return;
+  const w = document.getElementById('timelineContainer').clientWidth - 30;
+  state.zoomPxPerSec = Math.max(10, w / state.take.duration);
+  renderTimeline();
+});
+
+document.getElementById('timelineContainer').addEventListener('click', e => {
+  if (e.target.closest('.event-block')) return;
+  if (e.target.closest('button')) return;
+  const inner = document.getElementById('timelineInner');
+  const rect = inner.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const t = x / state.zoomPxPerSec;
+  if (t >= 0 && state.take && t <= state.take.duration) {
+    setPlayheadTime(t);
+  }
+});
+
+function setPlayheadTime(t) {
+  const ph = document.getElementById('playhead');
+  ph.classList.add('visible');
+  ph.style.left = (t * state.zoomPxPerSec) + 'px';
+  state.playback.startAtTime = t;
+}
+
+// ===================== Lecture du mix (preview) =====================
+function playMix() {
+  if (!state.take) return;
+  if (state.playback.active) return;
+  state.playback.active = true;
+  state.playback.startCtxTime = state.audioCtx.currentTime;
+  const startAt = state.playback.startAtTime || 0;
+
+  if (state.take.voiceBuffer && startAt < state.take.voiceBuffer.duration) {
+    const src = state.audioCtx.createBufferSource();
+    src.buffer = state.take.voiceBuffer;
+    const g = state.audioCtx.createGain();
+    g.gain.value = state.micGain.gain.value;
+    src.connect(g); g.connect(state.audioCtx.destination);
+    src.start(0, startAt);
+    state.playback.sources.push(src);
+  }
+
+  for (const ev of state.take.events) {
+    const buf = state.padBuffers.get(ev.padId);
+    if (!buf) continue;
+    const eventEnd = ev.time + ev.duration;
+    if (eventEnd <= startAt) continue;
+    const src = state.audioCtx.createBufferSource();
+    src.buffer = buf;
+    const g = state.audioCtx.createGain();
+    g.gain.value = state.padsGain.gain.value;
+    src.connect(g); g.connect(state.audioCtx.destination);
+    if (ev.time >= startAt) {
+      src.start(state.audioCtx.currentTime + (ev.time - startAt));
+    } else {
+      src.start(state.audioCtx.currentTime, startAt - ev.time);
+    }
+    state.playback.sources.push(src);
+  }
+
+  document.getElementById('btnPlayMix').innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>Pause';
+  document.getElementById('btnStopMix').disabled = false;
+  animatePlayhead();
+}
+
+function stopMixPlayback() {
+  state.playback.sources.forEach(s => { try { s.stop(); } catch(e){} });
+  state.playback.sources = [];
+  state.playback.active = false;
+  if (state.playback.rafId) cancelAnimationFrame(state.playback.rafId);
+  document.getElementById('btnPlayMix').innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 20,12 6,20"/></svg>Lecture';
+  document.getElementById('btnStopMix').disabled = true;
+}
+
+function animatePlayhead() {
+  const ph = document.getElementById('playhead');
+  const container = document.getElementById('timelineContainer');
+  function loop() {
+    if (!state.playback.active) return;
+    const elapsed = state.audioCtx.currentTime - state.playback.startCtxTime;
+    const t = state.playback.startAtTime + elapsed;
+    if (t >= state.take.duration) {
+      stopMixPlayback();
+      ph.classList.remove('visible');
+      state.playback.startAtTime = 0;
+      return;
+    }
+    ph.classList.add('visible');
+    ph.style.left = (t * state.zoomPxPerSec) + 'px';
+    const x = t * state.zoomPxPerSec;
+    if (x > container.scrollLeft + container.clientWidth - 80) {
+      container.scrollLeft = x - container.clientWidth + 80;
+    }
+    state.playback.rafId = requestAnimationFrame(loop);
+  }
+  loop();
+}
+
+document.getElementById('btnPlayMix').addEventListener('click', () => {
+  if (state.playback.active) stopMixPlayback();
+  else playMix();
+});
+document.getElementById('btnStopMix').addEventListener('click', () => {
+  stopMixPlayback();
+  state.playback.startAtTime = 0;
+  document.getElementById('playhead').classList.remove('visible');
+});
+document.getElementById('btnDiscardTake').addEventListener('click', () => {
+  if (!confirm('Abandonner cette prise ?')) return;
+  hideEditor();
+});
+
+// ===================== Export MP3 =====================
+async function exportMix() {
+  if (!state.take || !state.take.voiceBuffer) return;
+  if (typeof lamejs === 'undefined') { showStatus("Encodeur MP3 non chargé.", 'error'); return; }
+
+  showProgress('Préparation du mixage…', 0);
+  try {
+    const sampleRate = state.audioCtx.sampleRate;
+    const duration = state.take.duration + 0.5;
+    const offlineCtx = new OfflineAudioContext(2, Math.ceil(duration * sampleRate), sampleRate);
+
+    const micVol = state.micGain.gain.value;
+    const padVol = state.padsGain.gain.value;
+
+    const vSrc = offlineCtx.createBufferSource();
+    vSrc.buffer = state.take.voiceBuffer;
+    const vG = offlineCtx.createGain();
+    vG.gain.value = micVol;
+    vSrc.connect(vG); vG.connect(offlineCtx.destination);
+    vSrc.start(0);
+
+    for (const ev of state.take.events) {
+      const buf = state.padBuffers.get(ev.padId);
+      if (!buf) continue;
+      const src = offlineCtx.createBufferSource();
+      src.buffer = buf;
+      const g = offlineCtx.createGain();
+      g.gain.value = padVol;
+      src.connect(g); g.connect(offlineCtx.destination);
+      src.start(ev.time);
+    }
+
+    showProgress('Rendu audio…', 10);
+    const rendered = await offlineCtx.startRendering();
+
+    showProgress('Conversion MP3…', 50);
+    await new Promise(r => setTimeout(r, 50));
+
+    const kbps = 128;
+    const channels = rendered.numberOfChannels;
+    const encoder = new lamejs.Mp3Encoder(channels, rendered.sampleRate, kbps);
+    const mp3Data = [];
+
+    const left = float32ToInt16(rendered.getChannelData(0));
+    const right = channels >= 2 ? float32ToInt16(rendered.getChannelData(1)) : null;
+    const blockSize = 1152;
+    const total = left.length;
+    for (let i = 0; i < total; i += blockSize) {
+      const lc = left.subarray(i, i + blockSize);
+      const buf = right ? encoder.encodeBuffer(lc, right.subarray(i, i + blockSize)) : encoder.encodeBuffer(lc);
+      if (buf.length > 0) mp3Data.push(buf);
+      if ((i / blockSize) % 800 === 0) {
+        showProgress('Conversion MP3…', 50 + (i / total) * 50);
+        await new Promise(r => setTimeout(r, 0));
+      }
+    }
+    const flush = encoder.flush();
+    if (flush.length > 0) mp3Data.push(flush);
+
+    const mp3Blob = new Blob(mp3Data, { type: 'audio/mp3' });
+    const ts = new Date().toISOString().slice(0,16).replace(/[:T]/g,'-');
+    const baseName = `podcast-${ts}`;
+
+    showProgress('Terminé', 100);
+    await new Promise(r => setTimeout(r, 200));
+    hideProgress();
+
+    addExport(baseName, 'Mix final', mp3Blob, 'audio/mp3', 'mp3');
+    showStatus(`Mix exporté (${(mp3Blob.size / 1024 / 1024).toFixed(1)} Mo)`, 'success');
+
+    // Téléchargement auto
+    const url = URL.createObjectURL(mp3Blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = baseName + '.mp3';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  } catch (e) {
+    console.error(e);
+    hideProgress();
+    showStatus('Erreur d\'export : ' + e.message, 'error');
+  }
+}
+
+document.getElementById('btnExportMix').addEventListener('click', exportMix);
+
+function float32ToInt16(f32) {
+  const i16 = new Int16Array(f32.length);
+  for (let i = 0; i < f32.length; i++) {
+    const s = Math.max(-1, Math.min(1, f32[i]));
+    i16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+  }
+  return i16;
+}
+
+function showProgress(label, pct) {
+  document.getElementById('progressOverlay').classList.add('visible');
+  document.getElementById('progressLabel').textContent = label;
+  document.getElementById('progressFill').style.width = pct + '%';
+  document.getElementById('progressDetail').textContent = Math.round(pct) + '%';
+}
+function hideProgress() { document.getElementById('progressOverlay').classList.remove('visible'); }
+
+// ===================== Exports panel =====================
+function addExport(baseName, type, blob, mime, ext) {
+  const panel = document.getElementById('exportsPanel');
+  const list = document.getElementById('exportsList');
+  panel.classList.remove('hidden');
+  ext = ext || (mime.includes('webm') ? 'webm' : 'mp3');
+  const url = URL.createObjectURL(blob);
+  const div = document.createElement('div');
+  div.className = 'export-item';
+  div.innerHTML = `
+    <span class="export-item-type">${type}</span>
+    <span class="export-item-label">${baseName}</span>
+    <audio controls preload="metadata" src="${url}"></audio>
+    <div class="export-actions">
+      <a href="${url}" download="${baseName}.${ext}"><button>↓ ${ext.toUpperCase()}</button></a>
+    </div>
+  `;
+  list.prepend(div);
+}
+document.getElementById('btnClearExports').addEventListener('click', () => {
+  if (!confirm('Effacer tous les exports ?')) return;
+  document.getElementById('exportsList').innerHTML = '';
+  document.getElementById('exportsPanel').classList.add('hidden');
+});
+
+// ===================== Modal pad =====================
+function openPadModal(editId) {
+  state.editingPadId = editId || null;
+  const isEdit = !!editId;
+  document.getElementById('modalTitle').textContent = isEdit ? 'Modifier le pad' : 'Ajouter un son';
+  document.getElementById('modalOk').textContent = isEdit ? 'Enregistrer' : 'Ajouter';
+  let name = '', color = PAD_COLORS[state.pads.length % PAD_COLORS.length], loop = false;
+  if (isEdit) {
+    const pad = state.pads.find(p => p.id === editId);
+    if (pad) { name = pad.name; color = pad.color; loop = pad.loop; }
+  } else if (state.pendingFile) {
+    name = state.pendingFile.name.replace(/\.[^/.]+$/, '');
+  }
+  document.getElementById('modalName').value = name;
+  document.getElementById('modalLoop').checked = loop;
+  state.selectedColor = color;
+  renderColorPicker();
+  document.getElementById('modal').classList.add('visible');
+  setTimeout(() => { document.getElementById('modalName').focus(); document.getElementById('modalName').select(); }, 50);
+}
+function renderColorPicker() {
+  const p = document.getElementById('colorPicker');
+  p.innerHTML = '';
+  PAD_COLORS.forEach(c => {
+    const sw = document.createElement('div');
+    sw.className = 'color-swatch' + (c === state.selectedColor ? ' selected' : '');
+    sw.style.background = c;
+    sw.addEventListener('click', () => { state.selectedColor = c; renderColorPicker(); });
+    p.appendChild(sw);
+  });
+}
+document.getElementById('modalCancel').addEventListener('click', () => { document.getElementById('modal').classList.remove('visible'); state.pendingFile = null; state.editingPadId = null; });
+document.getElementById('modalOk').addEventListener('click', async () => {
+  const name = document.getElementById('modalName').value.trim() || 'Sans titre';
+  const loop = document.getElementById('modalLoop').checked;
+  const color = state.selectedColor;
+  if (state.editingPadId) await updatePad(state.editingPadId, { name, loop, color });
+  else if (state.pendingFile) await addPad(state.pendingFile, name, color, loop);
+  document.getElementById('modal').classList.remove('visible');
+  state.pendingFile = null; state.editingPadId = null;
+});
+document.getElementById('modalName').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('modalOk').click();
+  if (e.key === 'Escape') document.getElementById('modalCancel').click();
+});
+
+// ===================== Modal banque =====================
+let bankModalMode = 'new';
+function openBankModal(mode) {
+  bankModalMode = mode;
+  document.getElementById('bankModalTitle').textContent = mode === 'new' ? 'Nouvelle banque' : 'Renommer la banque';
+  const cur = mode === 'rename' ? (state.banks.find(b => b.id === state.currentBankId)?.name || '') : '';
+  document.getElementById('bankModalName').value = cur;
+  document.getElementById('bankModal').classList.add('visible');
+  setTimeout(() => { document.getElementById('bankModalName').focus(); document.getElementById('bankModalName').select(); }, 50);
+}
+document.getElementById('bankModalCancel').addEventListener('click', () => document.getElementById('bankModal').classList.remove('visible'));
+document.getElementById('bankModalOk').addEventListener('click', async () => {
+  const name = document.getElementById('bankModalName').value.trim();
+  if (!name) return;
+  if (bankModalMode === 'new') await createBank(name);
+  else await renameBank(state.currentBankId, name);
+  document.getElementById('bankModal').classList.remove('visible');
+});
+document.getElementById('bankModalName').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('bankModalOk').click();
+  if (e.key === 'Escape') document.getElementById('bankModalCancel').click();
+});
+document.getElementById('btnNewBank').addEventListener('click', () => openBankModal('new'));
+document.getElementById('btnRenameBank').addEventListener('click', () => openBankModal('rename'));
+document.getElementById('btnDeleteBank').addEventListener('click', async () => {
+  const b = state.banks.find(x => x.id === state.currentBankId); if (!b) return;
+  if (!confirm(`Supprimer la banque "${b.name}" et tous ses pads ?`)) return;
+  await deleteBank(state.currentBankId);
+});
+document.getElementById('bankSelect').addEventListener('change', e => switchBank(e.target.value));
+
+// ===================== Aide =====================
+document.getElementById('btnHelp').addEventListener('click', () => document.getElementById('helpModal').classList.add('visible'));
+document.getElementById('helpModalClose').addEventListener('click', () => document.getElementById('helpModal').classList.remove('visible'));
+
+// ===================== Helpers =====================
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function formatDuration(s) { if (!s || !isFinite(s)) return ''; if (s < 60) return s.toFixed(1) + 's'; const m = Math.floor(s/60), x = Math.floor(s%60); return `${m}:${String(x).padStart(2,'0')}`; }
+function formatTime(s) { if (!isFinite(s)) s = 0; const m = Math.floor(s/60), x = Math.floor(s%60); return `${String(m).padStart(2,'0')}:${String(x).padStart(2,'0')}`; }
+function showStatus(msg, type = 'info') {
+  const el = document.getElementById('status');
+  el.textContent = msg;
+  el.className = 'status visible ' + type;
+  setTimeout(() => el.classList.remove('visible'), 5000);
+}
+
+// ===================== Bindings =====================
+document.getElementById('micSelect').addEventListener('change', e => setupMic(e.target.value));
+document.getElementById('btnRec').addEventListener('click', startRecording);
+document.getElementById('btnPause').addEventListener('click', pauseRecording);
+document.getElementById('btnStop').addEventListener('click', stopRecording);
+
+document.getElementById('micVol').addEventListener('input', e => {
+  const v = e.target.value / 100;
+  if (state.micGain) state.micGain.gain.value = v;
+  document.getElementById('micVolVal').textContent = e.target.value + '%';
+});
+document.getElementById('padVol').addEventListener('input', e => {
+  const v = e.target.value / 100;
+  if (state.padsGain) state.padsGain.gain.value = v;
+  document.getElementById('padVolVal').textContent = e.target.value + '%';
+});
+
+document.getElementById('fileInput').addEventListener('change', e => {
+  const f = e.target.files[0]; if (!f) return;
+  state.pendingFile = f;
+  openPadModal(null);
+  e.target.value = '';
+});
+
+document.addEventListener('keydown', e => {
+  const tag = e.target.tagName;
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+  if (e.key === ' ') {
+    e.preventDefault();
+    if (state.isRecording) pauseRecording();
+    else if (state.take && !document.getElementById('editorPanel').classList.contains('hidden')) {
+      if (state.playback.active) stopMixPlayback();
+      else playMix();
+    } else startRecording();
+    return;
+  }
+  if (e.key === 'Escape') {
+    if (state.isRecording) stopRecording();
+    else if (state.playback.active) { stopMixPlayback(); document.getElementById('playhead').classList.remove('visible'); }
+    return;
+  }
+  if ((e.key === 'Delete' || e.key === 'Backspace') && state.selectedEventId) {
+    deleteEvent(state.selectedEventId);
+    return;
+  }
+  const idx = e.key === '0' ? 9 : parseInt(e.key) - 1;
+  if (!isNaN(idx) && idx >= 0 && idx < state.pads.length) triggerPad(state.pads[idx].id);
+});
+
+window.addEventListener('beforeunload', e => { if (state.isRecording) { e.preventDefault(); e.returnValue = ''; } });
+
+// ===================== Init =====================
+(async function init() {
+  try {
+    state.db = await openDB();
+    await loadBanks();
+    await listMics();
+  } catch (e) {
+    showStatus('Erreur d\'initialisation : ' + e.message, 'error');
+    console.error(e);
+  }
+})();
+</script>
+</body>
+</html>
