@@ -100,6 +100,67 @@
   .zoom-controls { display: flex; gap: 4px; align-items: center; font-size: 12px; color: #8a91a0; }
   .zoom-controls button { padding: 4px 9px; font-size: 12px; }
   .editor-info { font-size: 12px; color: #8a91a0; margin-top: 8px; line-height: 1.5; }
+
+  /* Inspector du bloc sélectionné */
+  .inspector {
+    margin-top: 10px;
+    background: #14161c;
+    border: 1px solid #2a2f3a;
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+  .inspector-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+  }
+  .inspector-swatch {
+    width: 18px; height: 18px;
+    border-radius: 4px;
+    border: 1px solid rgba(255,255,255,0.15);
+    flex-shrink: 0;
+  }
+  .inspector-name {
+    font-weight: 500;
+    flex: 1;
+    min-width: 100px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .inspector-time {
+    font-variant-numeric: tabular-nums;
+    color: #8a91a0;
+    font-size: 12px;
+    background: #0a0c10;
+    padding: 3px 8px;
+    border-radius: 4px;
+    border: 1px solid #2a2f3a;
+  }
+  .inspector-controls {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+  }
+  .inspector-control {
+    background: #1c1f27;
+    border-radius: 6px;
+    padding: 8px 10px;
+    border: 1px solid #2a2f3a;
+  }
+  .inspector-label {
+    font-size: 12px;
+    color: #8a91a0;
+    margin-bottom: 6px;
+    display: flex;
+    justify-content: space-between;
+  }
+  .event-block.muted {
+    opacity: 0.4;
+    filter: grayscale(0.5);
+  }
   #exportsList { display: flex; flex-direction: column; gap: 8px; }
   .export-item { background: #14161c; border: 1px solid #2a2f3a; border-radius: 8px; padding: 10px 12px; font-size: 13px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .export-item-label { font-weight: 500; flex: 1; min-width: 150px; }
@@ -226,8 +287,33 @@
       <div id="playhead" class="playhead"></div>
     </div>
   </div>
+  <!-- Panneau d'inspection du bloc sélectionné -->
+  <div id="inspectorPanel" class="inspector hidden">
+    <div class="inspector-header">
+      <div class="inspector-swatch" id="inspectorSwatch"></div>
+      <div class="inspector-name" id="inspectorName">—</div>
+      <div class="inspector-time" id="inspectorTime"></div>
+      <button id="btnDuplicateEvent" class="icon-only" title="Dupliquer">⧉</button>
+      <button id="btnMuteEvent" class="icon-only" title="Muet">🔇</button>
+      <button id="btnDeleteEvent" class="icon-only" title="Supprimer">×</button>
+    </div>
+    <div class="inspector-controls">
+      <div class="inspector-control">
+        <div class="inspector-label"><span>Volume</span><span class="channel-value" id="evVolVal">100%</span></div>
+        <input type="range" id="evVol" min="0" max="200" value="100">
+      </div>
+      <div class="inspector-control">
+        <div class="inspector-label"><span>Fade in</span><span class="channel-value" id="evFadeInVal">0.0s</span></div>
+        <input type="range" id="evFadeIn" min="0" max="50" value="0">
+      </div>
+      <div class="inspector-control">
+        <div class="inspector-label"><span>Fade out</span><span class="channel-value" id="evFadeOutVal">0.0s</span></div>
+        <input type="range" id="evFadeOut" min="0" max="50" value="0">
+      </div>
+    </div>
+  </div>
   <div class="editor-info">
-    Glisse un bloc pour le déplacer. Survole-le pour le supprimer (×) ou utilise <kbd style="background:#2a2f3a;padding:1px 4px;border-radius:3px">Suppr</kbd>. Clique sur la timeline pour repositionner la tête de lecture.
+    Glisse un bloc pour le déplacer, clique dessus pour ajuster son volume et ses fades. Survole-le pour le supprimer (×) ou utilise <kbd style="background:#2a2f3a;padding:1px 4px;border-radius:3px">Suppr</kbd>. Clique sur la timeline pour repositionner la tête de lecture.
   </div>
 </div>
 
@@ -767,6 +853,8 @@ function showEditor() {
 }
 function hideEditor() {
   document.getElementById('editorPanel').classList.add('hidden');
+  document.getElementById('inspectorPanel').classList.add('hidden');
+  state.selectedEventId = null;
   stopMixPlayback();
   state.take = null;
 }
@@ -785,6 +873,7 @@ function renderTimeline() {
   renderRuler(w);
   renderVoiceWaveform(w);
   renderEventBlocks();
+  renderInspector();
   updateEditorTimer();
 }
 
@@ -848,13 +937,31 @@ function renderEventBlocks() {
   layer.innerHTML = '';
   state.take.events.forEach(ev => {
     const block = document.createElement('div');
-    block.className = 'event-block' + (ev.id === state.selectedEventId ? ' selected' : '');
+    block.className = 'event-block'
+      + (ev.id === state.selectedEventId ? ' selected' : '')
+      + (ev.muted ? ' muted' : '');
     block.style.left = (ev.time * state.zoomPxPerSec) + 'px';
-    block.style.width = Math.max(20, ev.duration * state.zoomPxPerSec) + 'px';
+    const blockWidth = Math.max(20, ev.duration * state.zoomPxPerSec);
+    block.style.width = blockWidth + 'px';
     block.style.background = ev.color;
     block.dataset.id = ev.id;
+
+    // Overlays pour fade in / fade out (dégradés noirs sur les bords)
+    const fadeIn = ev.fadeIn || 0;
+    const fadeOut = ev.fadeOut || 0;
+    let fadeOverlays = '';
+    if (fadeIn > 0) {
+      const w = Math.min(blockWidth, fadeIn * state.zoomPxPerSec);
+      fadeOverlays += `<div style="position:absolute;left:0;top:0;bottom:0;width:${w}px;background:linear-gradient(90deg,rgba(0,0,0,0.55),rgba(0,0,0,0));pointer-events:none"></div>`;
+    }
+    if (fadeOut > 0) {
+      const w = Math.min(blockWidth, fadeOut * state.zoomPxPerSec);
+      fadeOverlays += `<div style="position:absolute;right:0;top:0;bottom:0;width:${w}px;background:linear-gradient(270deg,rgba(0,0,0,0.55),rgba(0,0,0,0));pointer-events:none"></div>`;
+    }
+
     block.innerHTML = `
-      <span class="event-block-name">${escapeHtml(ev.padName)}</span>
+      ${fadeOverlays}
+      <span class="event-block-name">${escapeHtml(ev.padName)}${ev.muted ? ' 🔇' : ''}</span>
       <button class="event-block-del" data-del="${ev.id}">×</button>
     `;
     layer.appendChild(block);
@@ -862,10 +969,45 @@ function renderEventBlocks() {
       if (e.target.dataset.del) return;
       state.selectedEventId = ev.id;
       renderEventBlocks();
+      renderInspector();
     });
     block.querySelector('.event-block-del').addEventListener('click', e => { e.stopPropagation(); deleteEvent(ev.id); });
     makeEventDraggable(block, ev);
   });
+}
+
+function renderInspector() {
+  const panel = document.getElementById('inspectorPanel');
+  if (!state.selectedEventId || !state.take) {
+    panel.classList.add('hidden');
+    return;
+  }
+  const ev = state.take.events.find(e => e.id === state.selectedEventId);
+  if (!ev) { panel.classList.add('hidden'); return; }
+  panel.classList.remove('hidden');
+
+  document.getElementById('inspectorSwatch').style.background = ev.color;
+  document.getElementById('inspectorName').textContent = ev.padName + (ev.muted ? ' (muet)' : '');
+  document.getElementById('inspectorTime').textContent = `${formatTime(ev.time)} → ${formatTime(ev.time + ev.duration)}`;
+
+  const volPct = Math.round((ev.volume ?? 1) * 100);
+  document.getElementById('evVol').value = volPct;
+  document.getElementById('evVolVal').textContent = volPct + '%';
+
+  const fIn = ev.fadeIn || 0;
+  const fOut = ev.fadeOut || 0;
+  document.getElementById('evFadeIn').value = Math.round(fIn * 10);
+  document.getElementById('evFadeInVal').textContent = fIn.toFixed(1) + 's';
+  document.getElementById('evFadeOut').value = Math.round(fOut * 10);
+  document.getElementById('evFadeOutVal').textContent = fOut.toFixed(1) + 's';
+
+  // Limiter les fades à la moitié de la durée pour éviter qu'ils se chevauchent
+  const maxFadeDeci = Math.max(0, Math.floor(ev.duration * 5));
+  document.getElementById('evFadeIn').max = Math.min(50, maxFadeDeci);
+  document.getElementById('evFadeOut').max = Math.min(50, maxFadeDeci);
+
+  document.getElementById('btnMuteEvent').textContent = ev.muted ? '🔊' : '🔇';
+  document.getElementById('btnMuteEvent').title = ev.muted ? 'Réactiver' : 'Muet';
 }
 
 function makeEventDraggable(block, ev) {
@@ -910,6 +1052,7 @@ function deleteEvent(id) {
   if (state.selectedEventId === id) state.selectedEventId = null;
   state.take.duration = Math.max(state.take.voiceBuffer.duration, ...state.take.events.map(e => e.time + e.duration), 0);
   renderTimeline();
+  renderInspector();
 }
 
 function updateEditorTimer() {
@@ -928,6 +1071,12 @@ document.getElementById('btnZoomFit').addEventListener('click', () => {
 document.getElementById('timelineContainer').addEventListener('click', e => {
   if (e.target.closest('.event-block')) return;
   if (e.target.closest('button')) return;
+  // Désélectionner l'événement si on clique dans le vide
+  if (state.selectedEventId) {
+    state.selectedEventId = null;
+    renderEventBlocks();
+    renderInspector();
+  }
   const inner = document.getElementById('timelineInner');
   const rect = inner.getBoundingClientRect();
   const x = e.clientX - rect.left;
@@ -963,20 +1112,56 @@ function playMix() {
   }
 
   for (const ev of state.take.events) {
+    if (ev.muted) continue;
     const buf = state.padBuffers.get(ev.padId);
     if (!buf) continue;
     const eventEnd = ev.time + ev.duration;
     if (eventEnd <= startAt) continue;
+
     const src = state.audioCtx.createBufferSource();
     src.buffer = buf;
     const g = state.audioCtx.createGain();
-    g.gain.value = state.padsGain.gain.value;
-    src.connect(g); g.connect(state.audioCtx.destination);
+    const baseVol = state.padsGain.gain.value * (ev.volume ?? 1);
+
+    // Calcul des fades à l'intérieur du segment audible (en tenant compte de startAt)
+    const audibleStart = Math.max(ev.time, startAt);
+    const audibleEnd = ev.time + ev.duration;
+    const fadeIn = ev.fadeIn || 0;
+    const fadeOut = ev.fadeOut || 0;
+    const now = state.audioCtx.currentTime;
+
+    // Position temporelle de lecture (ctxTime à laquelle commencer)
+    let when;
+    let offset = 0;
     if (ev.time >= startAt) {
-      src.start(state.audioCtx.currentTime + (ev.time - startAt));
+      when = now + (ev.time - startAt);
     } else {
-      src.start(state.audioCtx.currentTime, startAt - ev.time);
+      when = now;
+      offset = startAt - ev.time;
     }
+
+    // Programmation du gain pour les fades
+    const fadeInEndAbs = ev.time + fadeIn;             // temps absolu fin du fade-in
+    const fadeOutStartAbs = ev.time + ev.duration - fadeOut; // temps absolu début du fade-out
+    g.gain.setValueAtTime(0.0001, when);
+    if (fadeIn > 0 && audibleStart < fadeInEndAbs) {
+      // On part du gain courant à audibleStart
+      const startFadePos = Math.max(audibleStart, ev.time);
+      const remaining = fadeInEndAbs - startFadePos;
+      const startGain = fadeIn > 0 ? Math.max(0.0001, (startFadePos - ev.time) / fadeIn * baseVol) : baseVol;
+      g.gain.setValueAtTime(startGain, when);
+      g.gain.linearRampToValueAtTime(baseVol, when + remaining);
+    } else {
+      g.gain.setValueAtTime(baseVol, when);
+    }
+    if (fadeOut > 0 && audibleEnd > fadeOutStartAbs) {
+      const fadeOutWhenStart = when + Math.max(0, fadeOutStartAbs - audibleStart);
+      g.gain.setValueAtTime(baseVol, fadeOutWhenStart);
+      g.gain.linearRampToValueAtTime(0.0001, fadeOutWhenStart + fadeOut);
+    }
+
+    src.connect(g); g.connect(state.audioCtx.destination);
+    src.start(when, offset);
     state.playback.sources.push(src);
   }
 
@@ -1032,6 +1217,59 @@ document.getElementById('btnDiscardTake').addEventListener('click', () => {
   hideEditor();
 });
 
+// ===================== Inspector du bloc sélectionné =====================
+function getSelectedEvent() {
+  if (!state.selectedEventId || !state.take) return null;
+  return state.take.events.find(e => e.id === state.selectedEventId) || null;
+}
+
+document.getElementById('evVol').addEventListener('input', e => {
+  const ev = getSelectedEvent(); if (!ev) return;
+  const pct = parseInt(e.target.value);
+  ev.volume = pct / 100;
+  document.getElementById('evVolVal').textContent = pct + '%';
+});
+
+document.getElementById('evFadeIn').addEventListener('input', e => {
+  const ev = getSelectedEvent(); if (!ev) return;
+  const s = parseInt(e.target.value) / 10;
+  ev.fadeIn = s;
+  document.getElementById('evFadeInVal').textContent = s.toFixed(1) + 's';
+  renderEventBlocks();
+});
+
+document.getElementById('evFadeOut').addEventListener('input', e => {
+  const ev = getSelectedEvent(); if (!ev) return;
+  const s = parseInt(e.target.value) / 10;
+  ev.fadeOut = s;
+  document.getElementById('evFadeOutVal').textContent = s.toFixed(1) + 's';
+  renderEventBlocks();
+});
+
+document.getElementById('btnMuteEvent').addEventListener('click', () => {
+  const ev = getSelectedEvent(); if (!ev) return;
+  ev.muted = !ev.muted;
+  renderEventBlocks();
+  renderInspector();
+});
+
+document.getElementById('btnDeleteEvent').addEventListener('click', () => {
+  if (state.selectedEventId) deleteEvent(state.selectedEventId);
+});
+
+document.getElementById('btnDuplicateEvent').addEventListener('click', () => {
+  const ev = getSelectedEvent(); if (!ev) return;
+  const newEv = {
+    ...ev,
+    id: 'e' + Date.now() + Math.random().toString(36).slice(2,5),
+    time: ev.time + ev.duration + 0.1, // juste après l'original
+  };
+  state.take.events.push(newEv);
+  state.take.duration = Math.max(state.take.duration, newEv.time + newEv.duration);
+  state.selectedEventId = newEv.id;
+  renderTimeline();
+});
+
 // ===================== Export MP3 =====================
 async function exportMix() {
   if (!state.take || !state.take.voiceBuffer) return;
@@ -1054,14 +1292,31 @@ async function exportMix() {
     vSrc.start(0);
 
     for (const ev of state.take.events) {
+      if (ev.muted) continue;
       const buf = state.padBuffers.get(ev.padId);
       if (!buf) continue;
       const src = offlineCtx.createBufferSource();
       src.buffer = buf;
       const g = offlineCtx.createGain();
-      g.gain.value = padVol;
+      const baseVol = padVol * (ev.volume ?? 1);
+      const fadeIn = ev.fadeIn || 0;
+      const fadeOut = ev.fadeOut || 0;
+      const startAt = ev.time;
+      const endAt = ev.time + ev.duration;
+
+      if (fadeIn > 0) {
+        g.gain.setValueAtTime(0.0001, startAt);
+        g.gain.linearRampToValueAtTime(baseVol, startAt + fadeIn);
+      } else {
+        g.gain.setValueAtTime(baseVol, startAt);
+      }
+      if (fadeOut > 0) {
+        g.gain.setValueAtTime(baseVol, endAt - fadeOut);
+        g.gain.linearRampToValueAtTime(0.0001, endAt);
+      }
+
       src.connect(g); g.connect(offlineCtx.destination);
-      src.start(ev.time);
+      src.start(startAt);
     }
 
     showProgress('Rendu audio…', 10);
