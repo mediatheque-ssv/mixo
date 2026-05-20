@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Studio Podcast</title>
+<title>Mixo</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; }
@@ -167,6 +167,23 @@
   .file-input { display: none; }
   kbd { background: #2a2f3a; padding: 2px 6px; border-radius: 4px; font-size: 12px; font-family: inherit; }
 
+  body.file-dragover::after {
+    content: '📥  Lâche le fichier pour l\'importer';
+    position: fixed;
+    inset: 20px;
+    border: 3px dashed #3b82f6;
+    background: rgba(59,130,246,0.1);
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    color: #fff;
+    pointer-events: none;
+    z-index: 5000;
+    backdrop-filter: blur(2px);
+  }
+
   @media (max-width: 600px) {
     body { padding: 12px; }
     .panel { padding: 14px; }
@@ -181,7 +198,7 @@
 
 <div class="header">
   <div>
-    <h1>Studio Podcast</h1>
+    <h1>Mixo</h1>
     <div class="subtitle">Voix multi-clips, bruitages drag&drop, édition timeline complète</div>
   </div>
   <div class="header-right">
@@ -202,6 +219,8 @@
     <button id="btnRec" class="danger"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="6"/></svg>Enregistrer</button>
     <button id="btnPause" disabled><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>Pause</button>
     <button id="btnStop" disabled><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg>Stop</button>
+    <button id="btnImportAudio" title="Importer un fichier audio comme piste voix">📥 Importer un audio</button>
+    <button id="btnLoadProject" title="Ouvrir un projet sauvegardé">📂 Projet…</button>
     <div id="timer" class="timer">00:00</div>
   </div>
 </div>
@@ -245,9 +264,12 @@
     </div>
   </div>
   <div class="editor-toolbar">
+    <button id="btnUndo" title="Annuler (Ctrl+Z)" disabled>↶</button>
+    <button id="btnRedo" title="Rétablir (Ctrl+Y)" disabled>↷</button>
     <button id="btnPlayMix" class="primary"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 20,12 6,20"/></svg>Lecture</button>
     <button id="btnStopMix" disabled><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg>Stop</button>
-    <button id="btnSplitHere" title="Scinder le clip voix au curseur (S)">✂ Scinder ici</button>
+    <button id="btnSplitHere" title="Scinder le clip voix au curseur (S)">✂ Scinder</button>
+    <button id="btnSaveProject" title="Sauvegarder le projet (Ctrl+S)">💾 Sauvegarder</button>
     <button id="btnExportMix" class="primary"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2v13M5 12l7 7 7-7M5 22h14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Exporter MP3</button>
     <button id="btnDiscardTake">Nouvelle prise</button>
     <div id="editorTimer" class="timer">00:00</div>
@@ -355,19 +377,21 @@
       <div><kbd>Espace</kbd> &nbsp; Enregistrer / Pause (ou Lecture/Pause dans l'éditeur)</div>
       <div><kbd>Échap</kbd> &nbsp; Stop, ou annuler la sélection</div>
       <div><kbd>1</kbd>–<kbd>9</kbd>, <kbd>0</kbd> &nbsp; Déclencher les 10 premiers pads</div>
-      <div><kbd>S</kbd> &nbsp; Scinder le clip voix au curseur</div>
+      <div><kbd>S</kbd> &nbsp; Scinder le clip voix au curseur (ou aux bornes d'une sélection)</div>
       <div><kbd>M</kbd> &nbsp; Silencer la sélection</div>
       <div><kbd>Ctrl+X</kbd> &nbsp; Couper la sélection vers un nouveau pad</div>
       <div><kbd>Ctrl+C</kbd> &nbsp; Copier la sélection vers un nouveau pad</div>
       <div><kbd>Suppr</kbd> &nbsp; Supprimer la sélection (ou le bloc/clip sélectionné)</div>
+      <div><kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd> &nbsp; Annuler / Rétablir</div>
+      <div><kbd>Ctrl+S</kbd> &nbsp; Sauvegarder le projet</div>
     </div>
     <h3 style="margin-top: 20px; font-size: 16px">Workflow</h3>
     <div style="font-size: 13px; color: #b0b8c5; line-height: 1.7;">
-      1. Enregistre ta voix en déclenchant les pads.<br>
+      1. Enregistre ta voix en déclenchant les pads — ou <strong>importe un audio existant</strong> (bouton ou glisse-dépose le fichier).<br>
       2. Dans l'éditeur, glisse les pads pour en ajouter, sélectionne des zones de voix, scinde, repositionne.<br>
       3. <strong>Ctrl+glisser</strong> un clip voix déplace aussi les bruitages compris dans son intervalle.<br>
       4. Clique sur un bloc/clip pour ajuster volume et fades.<br>
-      5. Exporte en MP3 quand tu es content.
+      5. <strong>Sauvegarde le projet</strong> pour y revenir plus tard, ou exporte directement en MP3.
     </div>
     <div class="modal-actions">
       <button id="helpModalClose" class="primary">Fermer</button>
@@ -384,6 +408,53 @@
 </div>
 
 <input type="file" id="fileInput" class="file-input" accept="audio/*">
+<input type="file" id="audioImportInput" class="file-input" accept="audio/*">
+<input type="file" id="projectImportInput" class="file-input" accept=".mixo,application/json">
+
+<!-- Modal : que faire avec l'audio importé alors qu'une prise est en cours -->
+<div id="importModal" class="modal-bg">
+  <div class="modal">
+    <h3>Audio importé</h3>
+    <p style="font-size: 14px; color: #b0b8c5; margin-bottom: 16px;">Une prise est déjà en cours d'édition. Que veux-tu faire avec le fichier audio importé ?</p>
+    <div class="modal-actions" style="flex-direction: column; align-items: stretch">
+      <button id="importReplace" class="danger" style="justify-content: center">Remplacer la prise actuelle</button>
+      <button id="importAdd" class="primary" style="justify-content: center">Ajouter comme nouveau clip voix</button>
+      <button id="importCancel" style="justify-content: center">Annuler</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal : sauvegarder le projet -->
+<div id="saveProjectModal" class="modal-bg">
+  <div class="modal">
+    <h3>Sauvegarder le projet</h3>
+    <label>Nom du projet</label>
+    <input type="text" id="saveProjectName" placeholder="ex: Émission du 15 mai">
+    <div style="font-size: 12px; color: #8a91a0; margin-top: 10px; line-height: 1.5">
+      Le projet sera enregistré dans ce navigateur. Tu pourras aussi <strong>télécharger un fichier .mixo</strong> portable pour le sauvegarder sur ton disque ou le partager.
+    </div>
+    <div class="modal-actions">
+      <button id="saveProjectCancel">Annuler</button>
+      <button id="saveProjectDownload">↓ Télécharger .mixo</button>
+      <button id="saveProjectOk" class="primary">Sauvegarder ici</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal : liste des projets -->
+<div id="loadProjectModal" class="modal-bg">
+  <div class="modal" style="max-width: 540px">
+    <h3>Projets sauvegardés</h3>
+    <div id="projectsList" style="max-height: 320px; overflow-y: auto; margin: 12px 0;"></div>
+    <div style="font-size: 12px; color: #8a91a0; line-height: 1.5; margin-top: 12px;">
+      Ou ouvre un fichier <strong>.mixo</strong> partagé par quelqu'un :
+    </div>
+    <div class="modal-actions" style="justify-content: space-between">
+      <button id="loadProjectImportFile">📁 Ouvrir un .mixo…</button>
+      <button id="loadProjectCancel">Fermer</button>
+    </div>
+  </div>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
 
@@ -392,9 +463,10 @@
 
 const PAD_COLORS = ['#2563eb','#7c3aed','#db2777','#dc2626','#ea580c','#ca8a04','#16a34a','#0891b2','#64748b','#9333ea','#e11d48','#0d9488','#f59e0b','#10b981','#6366f1','#ec4899'];
 const DB_NAME = 'StudioPodcastDB';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_BANKS = 'banks';
 const STORE_PADS = 'pads';
+const STORE_PROJECTS = 'projects';
 const SNAP_THRESHOLD = 0.15; // 150ms en secondes pour l'aimantation entre clips voix
 const VOICE_TRACK_HEIGHT = 90;
 
@@ -433,7 +505,83 @@ const state = {
   padDragging: { padId: null, ghost: null },
 
   playback: { active: false, startCtxTime: 0, startAtTime: 0, sources: [], rafId: null },
+
+  // Historique pour undo/redo. On stocke des snapshots sérialisés de take (sans le voiceBuffer)
+  history: { stack: [], index: -1, max: 80 },
 };
+
+// ===================== Historique (undo / redo) =====================
+// On sérialise take en JSON minimal : on EXCLUT voiceBuffer (immuable, on garde la référence vivante).
+// On clone clips, events, et tous les champs scalaires.
+function snapshotTake() {
+  if (!state.take) return null;
+  return JSON.stringify({
+    voiceClips: state.take.voiceClips,
+    events: state.take.events,
+    duration: state.take.duration,
+  });
+}
+function restoreFromSnapshot(snap) {
+  if (!snap || !state.take) return;
+  try {
+    const data = JSON.parse(snap);
+    state.take.voiceClips = data.voiceClips || [];
+    state.take.events = data.events || [];
+    state.take.duration = data.duration || 0;
+    // La sélection peut référencer un ID disparu : on nettoie
+    if (state.selectedKind === 'event' && !state.take.events.find(e => e.id === state.selectedId)) {
+      state.selectedKind = null; state.selectedId = null;
+    }
+    if (state.selectedKind === 'voice' && !state.take.voiceClips.find(c => c.id === state.selectedId)) {
+      state.selectedKind = null; state.selectedId = null;
+    }
+    state.voiceSelection = null;
+    renderTimeline();
+  } catch (e) { console.error('Restore failed', e); }
+}
+function pushHistory() {
+  if (!state.take) return;
+  const snap = snapshotTake();
+  if (!snap) return;
+  // Si on a fait undo puis nouvelle action, on coupe la branche future
+  if (state.history.index < state.history.stack.length - 1) {
+    state.history.stack = state.history.stack.slice(0, state.history.index + 1);
+  }
+  // Éviter les doublons consécutifs (le drag peut générer ça à la fin)
+  if (state.history.stack.length > 0 && state.history.stack[state.history.stack.length - 1] === snap) {
+    return;
+  }
+  state.history.stack.push(snap);
+  if (state.history.stack.length > state.history.max) state.history.stack.shift();
+  state.history.index = state.history.stack.length - 1;
+  updateHistoryButtons();
+}
+function resetHistory() {
+  state.history.stack = [];
+  state.history.index = -1;
+  if (state.take) pushHistory();
+  updateHistoryButtons();
+}
+function undo() {
+  if (state.history.index <= 0) return;
+  state.history.index--;
+  restoreFromSnapshot(state.history.stack[state.history.index]);
+  updateHistoryButtons();
+  showStatus('Annulé', 'info');
+}
+function redo() {
+  if (state.history.index >= state.history.stack.length - 1) return;
+  state.history.index++;
+  restoreFromSnapshot(state.history.stack[state.history.index]);
+  updateHistoryButtons();
+  showStatus('Rétabli', 'info');
+}
+function updateHistoryButtons() {
+  const u = document.getElementById('btnUndo');
+  const r = document.getElementById('btnRedo');
+  if (u) u.disabled = state.history.index <= 0;
+  if (r) r.disabled = state.history.index >= state.history.stack.length - 1;
+}
 
 // ===================== Petites utilitaires =====================
 function uid(prefix) { return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2,6); }
@@ -457,6 +605,9 @@ function openDB() {
       if (!db.objectStoreNames.contains(STORE_PADS)) {
         const store = db.createObjectStore(STORE_PADS, { keyPath: 'id' });
         store.createIndex('bankId', 'bankId', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORE_PROJECTS)) {
+        db.createObjectStore(STORE_PROJECTS, { keyPath: 'id' });
       }
     };
     req.onsuccess = e => resolve(e.target.result);
@@ -653,6 +804,7 @@ async function onRecordingStop() {
       fadeOut: 0,
     }];
     recomputeDuration();
+    resetHistory();
     showEditor();
     showStatus('Prise terminée. Édite la timeline ou exporte directement.', 'success');
   }, 200);
@@ -852,6 +1004,7 @@ function addPadToTimeline(padId, time) {
   recomputeDuration();
   state.selectedKind = 'event';
   state.selectedId = ev.id;
+  pushHistory();
   renderTimeline();
   showStatus(`Bruitage "${pad.name}" ajouté à ${formatTime(time)}`, 'info');
 }
@@ -995,6 +1148,7 @@ function hideEditor() {
   document.getElementById('inspectorPanel').classList.add('hidden');
   state.selectedKind = null; state.selectedId = null;
   state.voiceSelection = null;
+  state.history.stack = []; state.history.index = -1;
   stopMixPlayback();
   state.take = null;
 }
@@ -1152,10 +1306,12 @@ function setupVoiceClipInteraction(el, clip) {
   }
   function onHandleUp() {
     if (!drag) return;
+    const moved = drag.startTime !== clip.time;
     document.removeEventListener('mousemove', onHandleMove);
     document.removeEventListener('mouseup', onHandleUp);
     drag = null;
     el.classList.remove('dragging');
+    if (moved) pushHistory();
     renderTimeline();
   }
   handle.addEventListener('mousedown', onHandleDown);
@@ -1254,6 +1410,7 @@ function removeVoiceClip(id) {
     state.selectedKind = null; state.selectedId = null;
   }
   recomputeDuration();
+  pushHistory();
   renderTimeline();
 }
 
@@ -1324,9 +1481,11 @@ function makeEventDraggable(block, ev) {
   }
   function onMouseMove(e) { moveTo(e.clientX); }
   function onUp() {
+    const moved = startTime !== ev.time;
     block.classList.remove('dragging');
     document.removeEventListener('mousemove', onMouseMove);
     document.removeEventListener('mouseup', onUp);
+    if (moved) pushHistory();
     renderTimeline();
   }
   block.addEventListener('mousedown', e => onDown(e.clientX, e));
@@ -1338,6 +1497,7 @@ function deleteEvent(id) {
     state.selectedKind = null; state.selectedId = null;
   }
   recomputeDuration();
+  pushHistory();
   renderTimeline();
 }
 
@@ -1394,6 +1554,7 @@ document.getElementById('evVol').addEventListener('input', e => {
   it.volume = pct / 100;
   document.getElementById('evVolVal').textContent = pct + '%';
 });
+document.getElementById('evVol').addEventListener('change', () => pushHistory());
 document.getElementById('evFadeIn').addEventListener('input', e => {
   const it = getSelectedItem(); if (!it) return;
   const s = parseInt(e.target.value) / 10;
@@ -1401,6 +1562,7 @@ document.getElementById('evFadeIn').addEventListener('input', e => {
   document.getElementById('evFadeInVal').textContent = s.toFixed(1) + 's';
   renderEventBlocks();
 });
+document.getElementById('evFadeIn').addEventListener('change', () => pushHistory());
 document.getElementById('evFadeOut').addEventListener('input', e => {
   const it = getSelectedItem(); if (!it) return;
   const s = parseInt(e.target.value) / 10;
@@ -1408,9 +1570,11 @@ document.getElementById('evFadeOut').addEventListener('input', e => {
   document.getElementById('evFadeOutVal').textContent = s.toFixed(1) + 's';
   renderEventBlocks();
 });
+document.getElementById('evFadeOut').addEventListener('change', () => pushHistory());
 document.getElementById('btnMuteEvent').addEventListener('click', () => {
   const it = getSelectedItem(); if (!it) return;
   it.muted = !it.muted;
+  pushHistory();
   renderTimeline();
 });
 document.getElementById('btnDeleteEvent').addEventListener('click', () => {
@@ -1425,6 +1589,7 @@ document.getElementById('btnDuplicateEvent').addEventListener('click', () => {
   state.take.events.push(newEv);
   state.selectedId = newEv.id;
   recomputeDuration();
+  pushHistory();
   renderTimeline();
 });
 
@@ -1503,6 +1668,8 @@ async function applySelectionAction(action) {
 
   state.voiceSelection = null;
   recomputeDuration();
+  // copy ne modifie pas la timeline, donc on ne push que pour les autres
+  if (action !== 'copy') pushHistory();
   renderTimeline();
 }
 
@@ -1592,33 +1759,64 @@ function removeRangeFromClip(clip, localStart, localEnd) {
   state.take.voiceClips.splice(idx, 1, ...newClips);
 }
 
-// ===================== Scinder un clip voix au playhead =====================
+// ===================== Scinder : sélection (2 coupes) ou playhead (1 coupe) =====================
 function splitAtPlayhead() {
   if (!state.take) return;
+
+  // Si une sélection est active, scinde aux deux bornes
+  if (state.voiceSelection && (state.voiceSelection.end - state.voiceSelection.start) > 0.05) {
+    splitAtTimes([state.voiceSelection.start, state.voiceSelection.end]);
+    state.voiceSelection = null;
+    pushHistory();
+    renderTimeline();
+    showStatus('Sélection isolée en 3 clips', 'info');
+    return;
+  }
+
+  // Sinon, scinde au playhead
   const t = state.playback.startAtTime || 0;
-  if (t <= 0) return;
-  // Trouver le clip contenant t (strictement à l'intérieur, pas sur un bord)
-  const clip = state.take.voiceClips.find(c => t > c.time + 0.01 && t < c.time + (c.sourceEnd - c.sourceStart) - 0.01);
-  if (!clip) { showStatus('Aucun clip voix à scinder au curseur.', 'info'); return; }
-  const localT = t - clip.time;
-  const idx = state.take.voiceClips.indexOf(clip);
-  const left = {
-    id: uid('vc'),
-    sourceStart: clip.sourceStart, sourceEnd: clip.sourceStart + localT,
-    time: clip.time, volume: clip.volume, muted: clip.muted,
-    fadeIn: clip.fadeIn, fadeOut: 0,
-  };
-  const right = {
-    id: uid('vc'),
-    sourceStart: clip.sourceStart + localT, sourceEnd: clip.sourceEnd,
-    time: clip.time + localT, volume: clip.volume, muted: clip.muted,
-    fadeIn: 0, fadeOut: clip.fadeOut,
-  };
-  state.take.voiceClips.splice(idx, 1, left, right);
-  renderTimeline();
-  showStatus('Clip scindé', 'info');
+  if (t <= 0) { showStatus('Place la tête de lecture ou sélectionne une zone.', 'info'); return; }
+  if (splitAtTimes([t])) {
+    pushHistory();
+    renderTimeline();
+    showStatus('Clip scindé', 'info');
+  } else {
+    showStatus('Aucun clip voix à scinder ici.', 'info');
+  }
+}
+
+// Découpe tous les clips voix qui chevauchent les temps donnés (en secondes absolues).
+// Retourne true si au moins une coupe a été faite.
+function splitAtTimes(times) {
+  let didSomething = false;
+  // On trie pour éviter les soucis d'ordre
+  const sorted = [...times].sort((a, b) => a - b);
+  for (const t of sorted) {
+    // À chaque temps, on cherche le clip à scinder (peut avoir changé après les coupes précédentes)
+    const clip = state.take.voiceClips.find(c => t > c.time + 0.01 && t < c.time + (c.sourceEnd - c.sourceStart) - 0.01);
+    if (!clip) continue;
+    const localT = t - clip.time;
+    const idx = state.take.voiceClips.indexOf(clip);
+    const left = {
+      id: uid('vc'),
+      sourceStart: clip.sourceStart, sourceEnd: clip.sourceStart + localT,
+      time: clip.time, volume: clip.volume, muted: clip.muted,
+      fadeIn: clip.fadeIn, fadeOut: 0,
+    };
+    const right = {
+      id: uid('vc'),
+      sourceStart: clip.sourceStart + localT, sourceEnd: clip.sourceEnd,
+      time: clip.time + localT, volume: clip.volume, muted: clip.muted,
+      fadeIn: 0, fadeOut: clip.fadeOut,
+    };
+    state.take.voiceClips.splice(idx, 1, left, right);
+    didSomething = true;
+  }
+  return didSomething;
 }
 document.getElementById('btnSplitHere').addEventListener('click', splitAtPlayhead);
+document.getElementById('btnUndo').addEventListener('click', undo);
+document.getElementById('btnRedo').addEventListener('click', redo);
 
 // ===================== Lecture preview =====================
 function playMix() {
@@ -2041,11 +2239,418 @@ document.getElementById('fileInput').addEventListener('change', e => {
   e.target.value = '';
 });
 
+// ===================== IMPORT AUDIO =====================
+let pendingImportFile = null;
+
+async function decodeAudioFile(file) {
+  ensureAudioCtx();
+  const ab = await file.arrayBuffer();
+  return await state.audioCtx.decodeAudioData(ab.slice(0));
+}
+
+async function importAudioAsNewTake(buffer) {
+  state.take = {
+    voiceBuffer: buffer,
+    voiceClips: [{
+      id: uid('vc'),
+      sourceStart: 0,
+      sourceEnd: buffer.duration,
+      time: 0,
+      volume: 1, muted: false, fadeIn: 0, fadeOut: 0,
+    }],
+    events: [],
+    duration: 0,
+  };
+  recomputeDuration();
+  resetHistory();
+  showEditor();
+  showStatus(`Audio importé (${formatTime(buffer.duration)})`, 'success');
+}
+
+async function importAudioAsClip(buffer) {
+  // Ajouter comme clip voix au temps du playhead (ou à la fin si pas de playhead)
+  if (!state.take) return;
+  // Si la prise courante n'a pas de voiceBuffer (cas théorique), on l'attache directement
+  // Sinon, on a un souci : un seul voiceBuffer par take dans notre modèle actuel.
+  // Solution simple : on remplace si vide, sinon on prévient.
+  // Pour bien faire : on devrait gérer plusieurs voiceBuffers. Pour l'instant, on traite ça :
+  // si la prise a déjà un voiceBuffer différent, on confirme le remplacement.
+  if (state.take.voiceBuffer && state.take.voiceBuffer !== buffer) {
+    if (!confirm("Cette prise contient déjà un audio source. Le remplacer par celui-ci ?\n(Une seule source audio par prise dans cette version. Les clips existants seront refaits à partir du nouveau buffer.)")) return;
+  }
+  state.take.voiceBuffer = buffer;
+  // Ajouter un nouveau clip au playhead (ou à la fin)
+  const t = state.playback.startAtTime || state.take.duration || 0;
+  state.take.voiceClips.push({
+    id: uid('vc'),
+    sourceStart: 0,
+    sourceEnd: buffer.duration,
+    time: t,
+    volume: 1, muted: false, fadeIn: 0, fadeOut: 0,
+  });
+  recomputeDuration();
+  pushHistory();
+  renderTimeline();
+  showStatus(`Clip ajouté à ${formatTime(t)}`, 'success');
+}
+
+async function handleImportedAudioFile(file) {
+  try {
+    showStatus('Décodage du fichier…', 'info');
+    const buffer = await decodeAudioFile(file);
+    // Si pas de prise OU éditeur fermé : remplace direct
+    const editorOpen = state.take && !document.getElementById('editorPanel').classList.contains('hidden');
+    if (!editorOpen) {
+      await importAudioAsNewTake(buffer);
+    } else {
+      // Demander quoi faire
+      pendingImportFile = buffer;
+      document.getElementById('importModal').classList.add('visible');
+    }
+  } catch (e) {
+    showStatus("Impossible de décoder ce fichier audio : " + e.message, 'error');
+  }
+}
+
+document.getElementById('btnImportAudio').addEventListener('click', () => {
+  document.getElementById('audioImportInput').click();
+});
+document.getElementById('audioImportInput').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = '';
+  if (!f) return;
+  await handleImportedAudioFile(f);
+});
+document.getElementById('importReplace').addEventListener('click', async () => {
+  document.getElementById('importModal').classList.remove('visible');
+  if (pendingImportFile) {
+    await importAudioAsNewTake(pendingImportFile);
+    pendingImportFile = null;
+  }
+});
+document.getElementById('importAdd').addEventListener('click', async () => {
+  document.getElementById('importModal').classList.remove('visible');
+  if (pendingImportFile) {
+    await importAudioAsClip(pendingImportFile);
+    pendingImportFile = null;
+  }
+});
+document.getElementById('importCancel').addEventListener('click', () => {
+  document.getElementById('importModal').classList.remove('visible');
+  pendingImportFile = null;
+});
+
+// Drag & drop d'un fichier sur la page
+document.addEventListener('dragover', e => {
+  if (e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.includes('Files')) {
+    e.preventDefault();
+    document.body.classList.add('file-dragover');
+  }
+});
+document.addEventListener('dragleave', e => {
+  // Seulement si on quitte vraiment la page (relatedTarget null)
+  if (e.relatedTarget === null) document.body.classList.remove('file-dragover');
+});
+document.addEventListener('drop', async e => {
+  if (!e.dataTransfer || !e.dataTransfer.files || e.dataTransfer.files.length === 0) return;
+  e.preventDefault();
+  document.body.classList.remove('file-dragover');
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  // Fichier .mixo ?
+  if (file.name.endsWith('.mixo') || file.type === 'application/json') {
+    await loadProjectFromFile(file);
+    return;
+  }
+  // Sinon traiter comme audio
+  if (file.type.startsWith('audio/') || /\.(mp3|wav|m4a|ogg|opus|flac|aac|webm)$/i.test(file.name)) {
+    await handleImportedAudioFile(file);
+    return;
+  }
+  showStatus("Type de fichier non reconnu (déposez un audio ou un .mixo).", 'error');
+});
+
+// ===================== SAUVEGARDE / CHARGEMENT DE PROJET =====================
+const PROJECT_FORMAT_VERSION = 1;
+
+// Conversion AudioBuffer → base64 (via WAV)
+function audioBufferToBase64Wav(buffer) {
+  const wavBlob = audioBufferToWavBlob(buffer);
+  return blobToBase64(wavBlob);
+}
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onloadend = () => {
+      // result = "data:audio/wav;base64,XXXX" → on garde tout (data URL complète)
+      resolve(r.result);
+    };
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+  });
+}
+async function base64ToAudioBuffer(dataUrl) {
+  const res = await fetch(dataUrl);
+  const ab = await res.arrayBuffer();
+  return await state.audioCtx.decodeAudioData(ab);
+}
+
+async function buildProjectData(name) {
+  if (!state.take || !state.take.voiceBuffer) throw new Error('Pas de prise à sauvegarder');
+
+  // Pads utilisés par les events
+  const usedPadIds = [...new Set(state.take.events.map(e => e.padId))];
+  const pads = [];
+  for (const pid of usedPadIds) {
+    const pad = state.pads.find(p => p.id === pid);
+    const buf = state.padBuffers.get(pid);
+    if (!pad || !buf) continue;
+    const dataUrl = await audioBufferToBase64Wav(buf);
+    pads.push({
+      id: pad.id, name: pad.name, color: pad.color, loop: pad.loop, duration: pad.duration,
+      audio: dataUrl,
+    });
+  }
+
+  // Audio voix
+  const voiceAudio = await audioBufferToBase64Wav(state.take.voiceBuffer);
+
+  return {
+    format: 'mixo',
+    version: PROJECT_FORMAT_VERSION,
+    name: name || 'Projet sans nom',
+    createdAt: new Date().toISOString(),
+    voice: {
+      audio: voiceAudio,
+      sampleRate: state.take.voiceBuffer.sampleRate,
+      duration: state.take.voiceBuffer.duration,
+    },
+    voiceClips: state.take.voiceClips,
+    events: state.take.events,
+    duration: state.take.duration,
+    pads,
+  };
+}
+
+async function saveProjectToDB(name) {
+  const data = await buildProjectData(name);
+  const id = uid('pr');
+  await dbPut(STORE_PROJECTS, { id, name: data.name, createdAt: data.createdAt, data });
+  showStatus(`Projet "${data.name}" sauvegardé`, 'success');
+  return id;
+}
+
+async function downloadProjectFile(name) {
+  const data = await buildProjectData(name);
+  const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = (data.name || 'projet').replace(/[^a-zA-Z0-9 _-]/g, '_') + '.mixo';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  showStatus('Fichier .mixo téléchargé', 'success');
+}
+
+async function loadProjectData(data) {
+  if (!data || data.format !== 'mixo') throw new Error("Fichier .mixo invalide");
+
+  ensureAudioCtx();
+
+  // Charger la voix
+  const voiceBuffer = await base64ToAudioBuffer(data.voice.audio);
+
+  // Recréer les pads dans la banque courante avec de nouveaux IDs pour éviter toute collision.
+  // On mappe ancien_id → nouveau_pad pour ensuite mettre à jour les events.
+  const padsToCreate = (data.pads || []);
+  const idMap = new Map();
+  for (let i = 0; i < padsToCreate.length; i++) {
+    const p = padsToCreate[i];
+    const buf = await base64ToAudioBuffer(p.audio);
+    const res = await fetch(p.audio);
+    const blob = await res.blob();
+    const newId = uid('p');
+    const padObj = {
+      id: newId, bankId: state.currentBankId, name: p.name,
+      color: p.color, loop: p.loop, volume: 1, order: state.pads.length,
+      blob, duration: p.duration,
+    };
+    await dbPut(STORE_PADS, padObj);
+    state.pads.push(padObj);
+    state.padBuffers.set(newId, buf);
+    idMap.set(p.id, padObj);
+  }
+  if (padsToCreate.length > 0) {
+    renderPads();
+    showStatus(`${padsToCreate.length} pad(s) du projet ajouté(s) à la banque "${state.banks.find(b => b.id === state.currentBankId)?.name}"`, 'info');
+  }
+
+  // Recréer les events en remappant padId si nécessaire
+  const events = (data.events || []).map(ev => {
+    const mapped = idMap.get(ev.padId);
+    if (mapped) {
+      return { ...ev, padId: mapped.id, padName: mapped.name, color: mapped.color };
+    }
+    return ev;
+  });
+
+  state.take = {
+    voiceBuffer,
+    voiceClips: data.voiceClips || [],
+    events,
+    duration: data.duration || 0,
+  };
+  recomputeDuration();
+  resetHistory();
+  showEditor();
+  showStatus(`Projet "${data.name}" ouvert`, 'success');
+}
+
+async function loadProjectFromFile(file) {
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    await loadProjectData(data);
+  } catch (e) {
+    showStatus('Impossible d\'ouvrir ce fichier : ' + e.message, 'error');
+  }
+}
+
+// === Modal sauvegarder ===
+function openSaveProjectDialog() {
+  if (!state.take) return;
+  // Pré-rempli avec un nom basé sur la date
+  const ts = new Date().toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  document.getElementById('saveProjectName').value = `Projet ${ts}`;
+  document.getElementById('saveProjectModal').classList.add('visible');
+  setTimeout(() => { document.getElementById('saveProjectName').focus(); document.getElementById('saveProjectName').select(); }, 50);
+}
+document.getElementById('btnSaveProject').addEventListener('click', openSaveProjectDialog);
+document.getElementById('saveProjectCancel').addEventListener('click', () => document.getElementById('saveProjectModal').classList.remove('visible'));
+document.getElementById('saveProjectOk').addEventListener('click', async () => {
+  const name = document.getElementById('saveProjectName').value.trim() || 'Projet sans nom';
+  document.getElementById('saveProjectModal').classList.remove('visible');
+  showProgress('Sauvegarde du projet…', 30);
+  try {
+    await saveProjectToDB(name);
+  } catch (e) { showStatus('Erreur : ' + e.message, 'error'); }
+  finally { hideProgress(); }
+});
+document.getElementById('saveProjectDownload').addEventListener('click', async () => {
+  const name = document.getElementById('saveProjectName').value.trim() || 'Projet';
+  document.getElementById('saveProjectModal').classList.remove('visible');
+  showProgress('Génération du fichier .mixo…', 30);
+  try {
+    await downloadProjectFile(name);
+  } catch (e) { showStatus('Erreur : ' + e.message, 'error'); }
+  finally { hideProgress(); }
+});
+document.getElementById('saveProjectName').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('saveProjectOk').click();
+  if (e.key === 'Escape') document.getElementById('saveProjectCancel').click();
+});
+
+// === Modal charger ===
+document.getElementById('btnLoadProject').addEventListener('click', openLoadProjectDialog);
+async function openLoadProjectDialog() {
+  document.getElementById('loadProjectModal').classList.add('visible');
+  await renderProjectsList();
+}
+async function renderProjectsList() {
+  const list = document.getElementById('projectsList');
+  list.innerHTML = '<div style="color:#8a91a0;font-size:13px;padding:10px">Chargement…</div>';
+  try {
+    const all = await dbGetAll(STORE_PROJECTS);
+    if (!all || all.length === 0) {
+      list.innerHTML = '<div style="color:#8a91a0;font-size:13px;padding:10px">Aucun projet sauvegardé dans ce navigateur.</div>';
+      return;
+    }
+    all.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    list.innerHTML = '';
+    for (const p of all) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px;background:#14161c;border:1px solid #2a2f3a;border-radius:8px;margin-bottom:6px;font-size:13px;';
+      const date = p.createdAt ? new Date(p.createdAt).toLocaleString('fr-FR') : '';
+      row.innerHTML = `
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(p.name)}</div>
+          <div style="font-size:11px;color:#8a91a0">${date}</div>
+        </div>
+        <button data-act="open" data-id="${p.id}" class="primary">Ouvrir</button>
+        <button data-act="download" data-id="${p.id}" title="Télécharger en .mixo">↓</button>
+        <button data-act="delete" data-id="${p.id}" title="Supprimer" class="danger">×</button>
+      `;
+      list.appendChild(row);
+    }
+    list.querySelectorAll('button[data-act="open"]').forEach(b => b.addEventListener('click', () => openProjectFromDB(b.dataset.id)));
+    list.querySelectorAll('button[data-act="download"]').forEach(b => b.addEventListener('click', () => downloadProjectFromDB(b.dataset.id)));
+    list.querySelectorAll('button[data-act="delete"]').forEach(b => b.addEventListener('click', () => deleteProjectFromDB(b.dataset.id)));
+  } catch (e) {
+    list.innerHTML = '<div style="color:#fca5a5;font-size:13px;padding:10px">Erreur : ' + escapeHtml(e.message) + '</div>';
+  }
+}
+async function openProjectFromDB(id) {
+  const tx = state.db.transaction(STORE_PROJECTS, 'readonly');
+  const req = tx.objectStore(STORE_PROJECTS).get(id);
+  req.onsuccess = async () => {
+    const p = req.result; if (!p) return;
+    document.getElementById('loadProjectModal').classList.remove('visible');
+    showProgress('Chargement du projet…', 30);
+    try { await loadProjectData(p.data); }
+    catch (e) { showStatus('Erreur : ' + e.message, 'error'); }
+    finally { hideProgress(); }
+  };
+}
+async function downloadProjectFromDB(id) {
+  const tx = state.db.transaction(STORE_PROJECTS, 'readonly');
+  const req = tx.objectStore(STORE_PROJECTS).get(id);
+  req.onsuccess = () => {
+    const p = req.result; if (!p) return;
+    const blob = new Blob([JSON.stringify(p.data)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = (p.name || 'projet').replace(/[^a-zA-Z0-9 _-]/g, '_') + '.mixo';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  };
+}
+async function deleteProjectFromDB(id) {
+  if (!confirm('Supprimer définitivement ce projet ?')) return;
+  await dbDelete(STORE_PROJECTS, id);
+  await renderProjectsList();
+  showStatus('Projet supprimé', 'info');
+}
+document.getElementById('loadProjectCancel').addEventListener('click', () => document.getElementById('loadProjectModal').classList.remove('visible'));
+document.getElementById('loadProjectImportFile').addEventListener('click', () => document.getElementById('projectImportInput').click());
+document.getElementById('projectImportInput').addEventListener('change', async e => {
+  const f = e.target.files[0]; e.target.value = '';
+  if (!f) return;
+  document.getElementById('loadProjectModal').classList.remove('visible');
+  await loadProjectFromFile(f);
+});
+
 // ===================== Raccourcis clavier =====================
 document.addEventListener('keydown', e => {
   const tag = e.target.tagName;
   if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
 
+  // Ctrl+Z / Ctrl+Y / Ctrl+Shift+Z
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'z' || e.key === 'Z')) {
+    e.preventDefault();
+    undo();
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && ((e.key === 'y' || e.key === 'Y') || (e.shiftKey && (e.key === 'z' || e.key === 'Z')))) {
+    e.preventDefault();
+    redo();
+    return;
+  }
+  // Ctrl+S = sauvegarder
+  if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+    e.preventDefault();
+    if (state.take && !document.getElementById('editorPanel').classList.contains('hidden')) {
+      openSaveProjectDialog();
+    }
+    return;
+  }
   if ((e.ctrlKey || e.metaKey) && (e.key === 'x' || e.key === 'X')) {
     e.preventDefault();
     if (state.voiceSelection) applySelectionAction('cut');
@@ -2070,7 +2675,8 @@ document.addEventListener('keydown', e => {
     else if (state.playback.active) { stopMixPlayback(); document.getElementById('playhead').classList.remove('visible'); }
     return;
   }
-  if (e.key === 's' || e.key === 'S') {
+  // s / S (sans Ctrl) = scinder
+  if ((e.key === 's' || e.key === 'S') && !e.ctrlKey && !e.metaKey) {
     if (state.take && !document.getElementById('editorPanel').classList.contains('hidden')) {
       e.preventDefault();
       splitAtPlayhead();
