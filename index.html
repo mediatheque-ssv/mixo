@@ -76,16 +76,18 @@
   .timeline-container { background: #0a0c10; border: 1px solid #2a2f3a; border-radius: 8px; overflow-x: auto; overflow-y: hidden; position: relative; }
   .timeline-container.drop-active { border-color: #3b82f6; box-shadow: inset 0 0 0 2px #3b82f6; }
   .timeline-inner { position: relative; }
-  .timeline-track { position: relative; border-bottom: 1px solid #2a2f3a; overflow: hidden; }
+  .timeline-track { position: relative; border-bottom: 1px solid #2a2f3a; overflow: visible; display: flex; }
+  .timeline-track.drop-target .track-content { box-shadow: inset 0 0 0 2px #3b82f6; }
+  .voice-clip.dragging-cross-track, .event-block.dragging-cross-track { pointer-events: none; opacity: 0.85; box-shadow: 0 4px 16px rgba(0,0,0,0.6), inset 0 0 0 2px #fff !important; z-index: 50; }
   .timeline-track:last-child { border-bottom: none; }
   .timeline-track.voice-track { height: 90px; background: #0a0c10; }
   .timeline-track.events-track { height: 80px; background: #0d1015; }
   /* Bande latérale (header) de chaque piste */
   .track-head {
-    position: absolute; left: 0; top: 0; bottom: 0;
+    position: sticky; left: 0; top: 0; height: 100%;
     width: 150px; background: #14161c; border-right: 2px solid #2a2f3a;
     z-index: 15; padding: 6px 8px; display: flex; flex-direction: column; gap: 4px;
-    font-size: 11px; box-sizing: border-box;
+    font-size: 11px; box-sizing: border-box; flex-shrink: 0;
   }
   .track-head.active { background: #1d2535; box-shadow: inset 3px 0 0 #fbbf24; }
   .track-head-row { display: flex; align-items: center; gap: 4px; }
@@ -106,7 +108,7 @@
   .track-vol-row input[type=range] { flex: 1; }
   .track-color-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
   .track-content {
-    position: absolute; left: 150px; right: 0; top: 0; bottom: 0;
+    position: relative; flex: 1; height: 100%; overflow: hidden;
   }
   .track-delete-btn { width: 22px; height: 18px; padding: 0; border: 1px solid #3a4050; background: #14161c; color: #8a91a0; border-radius: 3px; cursor: pointer; font-size: 14px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
   .track-delete-btn:hover { background: #4a1d1d; color: #fca5a5; border-color: #7f2828; }
@@ -1407,7 +1409,7 @@ function renderTracks(w) {
     // Content (zone des clips/events)
     const content = document.createElement('div');
     content.className = 'track-content';
-    content.style.width = (w - TRACK_HEAD_W) + 'px';
+    content.style.minWidth = (w - TRACK_HEAD_W) + 'px';
     content.dataset.trackContent = track.id;
     trackEl.appendChild(content);
 
@@ -1454,6 +1456,7 @@ function renderTracks(w) {
 
     // Renommer au double-clic
     const nameEl = head.querySelector(`[data-track-name="${track.id}"]`);
+    nameEl.addEventListener('click', e => e.stopPropagation()); // empêche le re-render qui détruirait le span avant le dblclick
     nameEl.addEventListener('dblclick', e => { e.stopPropagation(); startRenameTrack(nameEl, track); });
 
     wrap.appendChild(trackEl);
@@ -1461,32 +1464,33 @@ function renderTracks(w) {
 }
 
 function startRenameTrack(nameEl, track) {
-  nameEl.contentEditable = 'true';
-  nameEl.focus();
-  // Sélectionner tout le texte
-  const range = document.createRange();
-  range.selectNodeContents(nameEl);
-  const sel = window.getSelection();
-  sel.removeAllRanges();
-  sel.addRange(range);
+  // Remplacer le span par un input temporaire
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = track.name;
+  input.style.cssText = 'flex:1; width:auto; padding:2px 4px; font-size:11px; font-family:inherit; background:#0a0c10; color:#e8ebf0; border:1px solid #3b82f6; border-radius:3px; outline:none; min-width:0;';
+  nameEl.parentNode.replaceChild(input, nameEl);
+  input.focus();
+  input.select();
+  let finished = false;
   const finish = (commit) => {
-    nameEl.contentEditable = 'false';
-    nameEl.removeEventListener('blur', onBlur);
-    nameEl.removeEventListener('keydown', onKey);
-    const newName = nameEl.textContent.trim();
+    if (finished) return;
+    finished = true;
+    const newName = input.value.trim();
     if (commit && newName && newName !== track.name) {
       track.name = newName;
       pushHistory();
     }
     renderTimeline();
   };
-  const onBlur = () => finish(true);
-  const onKey = e => {
+  input.addEventListener('blur', () => finish(true));
+  input.addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); finish(true); }
     if (e.key === 'Escape') { e.preventDefault(); finish(false); }
-  };
-  nameEl.addEventListener('blur', onBlur);
-  nameEl.addEventListener('keydown', onKey);
+  });
+  // Empêcher la propagation pour ne pas trigger d'autres handlers
+  input.addEventListener('mousedown', e => e.stopPropagation());
+  input.addEventListener('click', e => e.stopPropagation());
 }
 
 function moveTrack(trackId, dir) {
@@ -1640,10 +1644,30 @@ function setupVoiceClipInteraction(el, clip, track) {
       for (const a of drag.attached) a.ev.time = newTime + a.relTime;
     }
     recomputeDuration();
+
+    // Feedback visuel pour le changement de piste : transform vertical + highlight piste cible
+    const dy = e.clientY - drag.startY;
+    const targetTrackId = detectTrackAtY(e.clientY);
+    const targetTrack = targetTrackId ? findTrack(targetTrackId) : null;
+    // Highlight uniquement si piste compatible et différente de l'origine
+    document.querySelectorAll('.timeline-track.drop-target').forEach(t => t.classList.remove('drop-target'));
+    if (targetTrack && targetTrack.type === 'voice' && targetTrack.id !== drag.originTrackId) {
+      const targetEl = document.querySelector(`.timeline-track[data-track-id="${targetTrack.id}"]`);
+      if (targetEl) targetEl.classList.add('drop-target');
+      el.classList.add('dragging-cross-track');
+      el.style.transform = `translateY(${dy}px)`;
+    } else {
+      el.classList.remove('dragging-cross-track');
+      el.style.transform = '';
+    }
   }
   function onHandleUp(e) {
     if (!drag) return;
     const moved = drag.startTime !== clip.time;
+    // Reset feedback visuel
+    document.querySelectorAll('.timeline-track.drop-target').forEach(t => t.classList.remove('drop-target'));
+    el.classList.remove('dragging-cross-track');
+    el.style.transform = '';
     // Détecter si lâché sur une autre piste voix → déplacement entre pistes
     const targetTrackId = detectTrackAtY(e.clientY);
     const targetTrack = targetTrackId ? findTrack(targetTrackId) : null;
@@ -1825,11 +1849,12 @@ function renderEventsInTrack(container, track) {
 }
 
 function makeEventDraggable(block, ev, track) {
-  let startX, startTime, originTrackId;
+  let startX, startY, startTime, originTrackId;
   function onDown(clientX, e) {
     if (e && e.target.dataset.del) return;
     if (e && e.preventDefault) e.preventDefault();
     startX = clientX;
+    startY = e ? e.clientY : 0;
     startTime = ev.time;
     originTrackId = track.id;
     block.classList.add('dragging');
@@ -1839,17 +1864,36 @@ function makeEventDraggable(block, ev, track) {
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onUp);
   }
-  function moveTo(clientX) {
+  function moveTo(clientX, clientY) {
     const dx = clientX - startX;
     const dt = dx / state.zoomPxPerSec;
     const newTime = Math.max(0, startTime + dt);
     ev.time = newTime;
     block.style.left = (newTime * state.zoomPxPerSec) + 'px';
     recomputeDuration();
+
+    // Feedback visuel cross-track
+    const dy = clientY - startY;
+    const targetTrackId = detectTrackAtY(clientY);
+    const targetTrack = targetTrackId ? findTrack(targetTrackId) : null;
+    document.querySelectorAll('.timeline-track.drop-target').forEach(t => t.classList.remove('drop-target'));
+    if (targetTrack && targetTrack.type === 'events' && targetTrack.id !== originTrackId) {
+      const targetEl = document.querySelector(`.timeline-track[data-track-id="${targetTrack.id}"]`);
+      if (targetEl) targetEl.classList.add('drop-target');
+      block.classList.add('dragging-cross-track');
+      block.style.transform = `translateY(${dy}px)`;
+    } else {
+      block.classList.remove('dragging-cross-track');
+      block.style.transform = '';
+    }
   }
-  function onMouseMove(e) { moveTo(e.clientX); }
+  function onMouseMove(e) { moveTo(e.clientX, e.clientY); }
   function onUp(e) {
     const moved = startTime !== ev.time;
+    // Reset feedback
+    document.querySelectorAll('.timeline-track.drop-target').forEach(t => t.classList.remove('drop-target'));
+    block.classList.remove('dragging-cross-track');
+    block.style.transform = '';
     // Détecter si lâché sur une autre piste events
     const targetTrackId = detectTrackAtY(e.clientY);
     const targetTrack = targetTrackId ? findTrack(targetTrackId) : null;
@@ -2156,13 +2200,14 @@ function removeRangeFromClip(clip, track, localStart, localEnd) {
   track.clips.splice(idx, 1, ...newClips);
 }
 
-// ===================== Scinder : sélection (2 coupes) ou playhead (1 coupe) =====================
+// ===================== Scinder : sélection (2 coupes sur le clip de la sélection) ou playhead (1 coupe sur toutes les pistes) =====================
 function splitAtPlayhead() {
   if (!state.take) return;
 
-  // Si une sélection est active, scinde aux deux bornes
   if (state.voiceSelection && (state.voiceSelection.end - state.voiceSelection.start) > 0.05) {
-    splitAtTimes([state.voiceSelection.start, state.voiceSelection.end]);
+    // Coupes aux deux bornes, sur le clip de la sélection précisément
+    const clipId = state.voiceSelection.clipId;
+    splitAtTimes([state.voiceSelection.start, state.voiceSelection.end], clipId);
     state.voiceSelection = null;
     pushHistory();
     renderTimeline();
@@ -2170,49 +2215,63 @@ function splitAtPlayhead() {
     return;
   }
 
-  // Sinon, scinde au playhead
+  // Sinon, scinde au playhead — sur toutes les pistes voix qui ont un clip à ce point
   const t = state.playback.startAtTime || 0;
   if (t <= 0) { showStatus('Place la tête de lecture ou sélectionne une zone.', 'info'); return; }
   if (splitAtTimes([t])) {
     pushHistory();
     renderTimeline();
-    showStatus('Clip scindé', 'info');
+    showStatus('Clip(s) scindé(s)', 'info');
   } else {
     showStatus('Aucun clip voix à scinder ici.', 'info');
   }
 }
 
 // Découpe tous les clips voix qui chevauchent les temps donnés (toutes pistes voix).
-function splitAtTimes(times) {
+// Si onlyClipId est fourni, ne coupe QUE ce clip (utile pour la sélection sur un clip donné).
+function splitAtTimes(times, onlyClipId) {
   let didSomething = false;
   const sorted = [...times].sort((a, b) => a - b);
   for (const t of sorted) {
-    // Chercher dans toutes les pistes voix
-    let foundTrack = null, foundClip = null;
+    // Si onlyClipId : on cible précisément ce clip
+    if (onlyClipId) {
+      const f = findClipById(onlyClipId);
+      if (!f) continue;
+      const c = f.clip;
+      if (!(t > c.time + 0.01 && t < c.time + (c.sourceEnd - c.sourceStart) - 0.01)) continue;
+      doSplit(f.track, c, t);
+      didSomething = true;
+      continue;
+    }
+    // Sinon : on coupe sur TOUTES les pistes voix qui ont un clip chevauchant ce temps
     for (const track of state.take.tracks) {
       if (track.type !== 'voice') continue;
       const c = track.clips.find(c => t > c.time + 0.01 && t < c.time + (c.sourceEnd - c.sourceStart) - 0.01);
-      if (c) { foundTrack = track; foundClip = c; break; }
+      if (!c) continue;
+      doSplit(track, c, t);
+      didSomething = true;
     }
-    if (!foundClip) continue;
-    const localT = t - foundClip.time;
-    const idx = foundTrack.clips.indexOf(foundClip);
-    const left = {
-      id: uid('vc'), bufferId: foundClip.bufferId,
-      sourceStart: foundClip.sourceStart, sourceEnd: foundClip.sourceStart + localT,
-      time: foundClip.time, volume: foundClip.volume, muted: foundClip.muted,
-      fadeIn: foundClip.fadeIn, fadeOut: 0,
-    };
-    const right = {
-      id: uid('vc'), bufferId: foundClip.bufferId,
-      sourceStart: foundClip.sourceStart + localT, sourceEnd: foundClip.sourceEnd,
-      time: foundClip.time + localT, volume: foundClip.volume, muted: foundClip.muted,
-      fadeIn: 0, fadeOut: foundClip.fadeOut,
-    };
-    foundTrack.clips.splice(idx, 1, left, right);
-    didSomething = true;
   }
   return didSomething;
+}
+
+function doSplit(track, clip, t) {
+  const localT = t - clip.time;
+  const idx = track.clips.indexOf(clip);
+  if (idx < 0) return;
+  const left = {
+    id: uid('vc'), bufferId: clip.bufferId,
+    sourceStart: clip.sourceStart, sourceEnd: clip.sourceStart + localT,
+    time: clip.time, volume: clip.volume, muted: clip.muted,
+    fadeIn: clip.fadeIn, fadeOut: 0,
+  };
+  const right = {
+    id: uid('vc'), bufferId: clip.bufferId,
+    sourceStart: clip.sourceStart + localT, sourceEnd: clip.sourceEnd,
+    time: clip.time + localT, volume: clip.volume, muted: clip.muted,
+    fadeIn: 0, fadeOut: clip.fadeOut,
+  };
+  track.clips.splice(idx, 1, left, right);
 }
 document.getElementById('btnSplitHere').addEventListener('click', splitAtPlayhead);
 document.getElementById('btnUndo').addEventListener('click', undo);
