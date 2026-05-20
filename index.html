@@ -547,6 +547,7 @@ const state = {
   selectedId: null,
   voiceSelection: null, // { start, end, clipId, trackId }
   activeTrackId: null,  // piste active : reçoit les nouveaux clips/events
+  projectBankId: null,  // banque dédiée du projet ouvert (null si pas de projet)
 
   // Drag depuis la grille des pads vers la timeline
   padDragging: { padId: null, ghost: null },
@@ -1000,7 +1001,8 @@ async function switchBank(bankId) {
   state.activeSources.clear();
   state.currentBankId = bankId;
   localStorage.setItem('studio.currentBankId', bankId);
-  state.padBuffers.clear();
+  // On ne vide PAS state.padBuffers : on garde les buffers en mémoire pour que les events
+  // de la timeline qui référencent des pads d'autres banques continuent de fonctionner.
   await loadPadsForBank(bankId);
 }
 async function createBank(name) {
@@ -1211,20 +1213,29 @@ async function addPad(file, name, color, loop) {
 
 async function addPadFromAudioBuffer(buffer, name, color) {
   try {
-    // Encoder le buffer en WAV pour stockage (format universel décodable partout)
     const blob = audioBufferToWavBlob(buffer);
+    // Si un projet est ouvert, le pad va dans la banque dédiée du projet ; sinon banque courante
+    const targetBankId = state.projectBankId || state.currentBankId;
     const pad = {
       id: uid('p'),
-      bankId: state.currentBankId,
+      bankId: targetBankId,
       name: name || 'Extrait',
       color: color || PAD_COLORS[state.pads.length % PAD_COLORS.length],
       loop: false, volume: 1, order: state.pads.length,
       blob, duration: buffer.duration,
     };
     await dbPut(STORE_PADS, pad);
-    state.pads.push(pad);
-    state.padBuffers.set(pad.id, buffer);
-    renderPads();
+    // Si la banque cible est la courante, ajouter à state.pads, sinon basculer
+    if (targetBankId === state.currentBankId) {
+      state.pads.push(pad);
+      state.padBuffers.set(pad.id, buffer);
+      renderPads();
+    } else {
+      // La banque du projet n'est pas la banque actuellement affichée : on bascule dessus pour que l'utilisateur le voie
+      state.padBuffers.set(pad.id, buffer);
+      await switchBank(targetBankId);
+      renderBankSelect();
+    }
     return pad;
   } catch (e) { showStatus("Erreur création du pad : " + e.message, 'error'); }
 }
@@ -1336,6 +1347,7 @@ function hideEditor() {
   state.selectedKind = null; state.selectedId = null;
   state.voiceSelection = null;
   state.history.stack = []; state.history.index = -1;
+  state.projectBankId = null;
   stopMixPlayback();
   state.take = null;
 }
@@ -2925,7 +2937,22 @@ async function buildProjectData(name) {
   };
 }
 
+async function ensureProjectBank(name) {
+  // Crée (ou réutilise) la banque dédiée au projet, et la définit comme projectBankId
+  if (state.projectBankId && state.banks.find(b => b.id === state.projectBankId)) return;
+  const projectBankName = `📂 ${name}`;
+  let projectBank = state.banks.find(b => b.name === projectBankName);
+  if (!projectBank) {
+    projectBank = { id: uid('b'), name: projectBankName };
+    await dbPut(STORE_BANKS, projectBank);
+    state.banks.push(projectBank);
+    renderBankSelect();
+  }
+  state.projectBankId = projectBank.id;
+}
+
 async function saveProjectToDB(name) {
+  await ensureProjectBank(name);
   const data = await buildProjectData(name);
   const id = uid('pr');
   await dbPut(STORE_PROJECTS, { id, name: data.name, createdAt: data.createdAt, data });
@@ -2934,6 +2961,7 @@ async function saveProjectToDB(name) {
 }
 
 async function downloadProjectFile(name) {
+  await ensureProjectBank(name);
   const data = await buildProjectData(name);
   const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -2965,28 +2993,72 @@ async function loadProjectData(data) {
     throw new Error("Aucun audio dans le projet.");
   }
 
-  // Recréer les pads dans la banque courante avec de nouveaux IDs
+  // === Pads : déduplication par ID + banque dédiée pour ce projet ===
+  // 1. Récupérer tous les pads présents dans IndexedDB (toutes banques confondues)
+  const allExistingPads = await dbGetAll(STORE_PADS);
+  const existingByPadId = new Map(allExistingPads.map(p => [p.id, p]));
+
+  // 2. Préparer la banque dédiée au projet (créer si pas existante)
+  const projectBankName = `📂 ${data.name}`;
+  let projectBank = state.banks.find(b => b.name === projectBankName);
+  if (!projectBank) {
+    projectBank = { id: uid('b'), name: projectBankName };
+    await dbPut(STORE_BANKS, projectBank);
+    state.banks.push(projectBank);
+  }
+  state.projectBankId = projectBank.id;
+
+  // 3. Pour chaque pad du projet :
+  //    - s'il existe déjà par ID dans IndexedDB, on le réutilise (pas de duplication)
+  //    - sinon on le crée dans la banque dédiée au projet
   const padsToCreate = (data.pads || []);
   const idMap = new Map();
-  for (let i = 0; i < padsToCreate.length; i++) {
-    const p = padsToCreate[i];
-    const buf = await base64ToAudioBuffer(p.audio);
-    const res = await fetch(p.audio);
-    const blob = await res.blob();
-    const newId = uid('p');
-    const padObj = {
-      id: newId, bankId: state.currentBankId, name: p.name,
-      color: p.color, loop: p.loop, volume: 1, order: state.pads.length,
-      blob, duration: p.duration,
-    };
-    await dbPut(STORE_PADS, padObj);
-    state.pads.push(padObj);
-    state.padBuffers.set(newId, buf);
-    idMap.set(p.id, padObj);
+  let reused = 0, created = 0;
+  for (const p of padsToCreate) {
+    if (existingByPadId.has(p.id)) {
+      // Pad déjà présent : on le réutilise (peu importe la banque où il se trouve)
+      const existing = existingByPadId.get(p.id);
+      idMap.set(p.id, existing);
+      // S'assurer qu'il est chargé en mémoire
+      if (!state.padBuffers.has(p.id)) {
+        try {
+          const ab = await existing.blob.arrayBuffer();
+          const buf = await state.audioCtx.decodeAudioData(ab.slice(0));
+          state.padBuffers.set(p.id, buf);
+        } catch (e) { console.warn('Decode failed for reused pad', p.name, e); }
+      }
+      // S'assurer qu'il est dans state.pads (si la banque n'est pas chargée actuellement)
+      if (!state.pads.find(x => x.id === p.id)) {
+        // Il appartient à une autre banque que la courante ; on ne l'ajoute pas à state.pads
+        // (sinon il apparaîtrait dans la grille de la banque courante). On le garde juste mappé.
+      }
+      reused++;
+    } else {
+      // Nouveau pad : décoder l'audio et le créer dans la banque du projet
+      const buf = await base64ToAudioBuffer(p.audio);
+      const res = await fetch(p.audio);
+      const blob = await res.blob();
+      const padObj = {
+        id: p.id, bankId: projectBank.id, name: p.name,
+        color: p.color, loop: p.loop, volume: 1, order: 0,
+        blob, duration: p.duration,
+      };
+      await dbPut(STORE_PADS, padObj);
+      state.padBuffers.set(p.id, buf);
+      idMap.set(p.id, padObj);
+      created++;
+    }
   }
-  if (padsToCreate.length > 0) {
-    renderPads();
-    showStatus(`${padsToCreate.length} pad(s) du projet ajouté(s) à la banque "${state.banks.find(b => b.id === state.currentBankId)?.name}"`, 'info');
+
+  // 4. Basculer sur la banque dédiée au projet pour que l'utilisateur voie ses pads
+  await switchBank(projectBank.id);
+  renderBankSelect();
+
+  if (reused > 0 || created > 0) {
+    const msgs = [];
+    if (created > 0) msgs.push(`${created} pad(s) ajouté(s) à "${projectBankName}"`);
+    if (reused > 0) msgs.push(`${reused} pad(s) déjà présent(s) réutilisé(s)`);
+    showStatus(msgs.join(' · '), 'info');
   }
 
   // Construire les tracks selon la version du format
