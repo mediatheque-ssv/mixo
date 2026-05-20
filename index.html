@@ -3027,28 +3027,28 @@ async function loadProjectData(data) {
           state.padBuffers.set(p.id, buf);
         } catch (e) { console.warn('Decode failed for reused pad', p.name, e); }
       }
-      // S'assurer qu'il est dans state.pads (si la banque n'est pas chargée actuellement)
-      if (!state.pads.find(x => x.id === p.id)) {
-        // Il appartient à une autre banque que la courante ; on ne l'ajoute pas à state.pads
-        // (sinon il apparaîtrait dans la grille de la banque courante). On le garde juste mappé.
-      }
       reused++;
     } else {
       // Nouveau pad : décoder l'audio et le créer dans la banque du projet
-      const buf = await base64ToAudioBuffer(p.audio);
-      const res = await fetch(p.audio);
-      const blob = await res.blob();
-      const padObj = {
-        id: p.id, bankId: projectBank.id, name: p.name,
-        color: p.color, loop: p.loop, volume: 1, order: 0,
-        blob, duration: p.duration,
-      };
-      await dbPut(STORE_PADS, padObj);
-      state.padBuffers.set(p.id, buf);
-      idMap.set(p.id, padObj);
-      created++;
+      try {
+        const buf = await base64ToAudioBuffer(p.audio);
+        const res = await fetch(p.audio);
+        const blob = await res.blob();
+        const padObj = {
+          id: p.id, bankId: projectBank.id, name: p.name,
+          color: p.color, loop: p.loop, volume: 1, order: 0,
+          blob, duration: p.duration,
+        };
+        await dbPut(STORE_PADS, padObj);
+        state.padBuffers.set(p.id, buf);
+        idMap.set(p.id, padObj);
+        created++;
+      } catch (e) {
+        console.error('Erreur création pad du projet :', p.name, e);
+      }
     }
   }
+  console.log(`[loadProjectData] Pads : ${padsToCreate.length} dans le projet, ${reused} réutilisés, ${created} créés`);
 
   // 4. Basculer sur la banque dédiée au projet pour que l'utilisateur voie ses pads
   await switchBank(projectBank.id);
