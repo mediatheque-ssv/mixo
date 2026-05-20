@@ -83,12 +83,16 @@
   .timeline-track-label { position: absolute; top: 6px; left: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #8a91a0; font-weight: 600; background: rgba(10,12,16,0.85); padding: 2px 6px; border-radius: 3px; z-index: 5; pointer-events: none; }
 
   /* Clip voix sur la piste voix */
-  .voice-clip { position: absolute; top: 0; height: 100%; background: rgba(59, 130, 246, 0.08); border-left: 1px solid rgba(59, 130, 246, 0.4); border-right: 1px solid rgba(59, 130, 246, 0.4); cursor: grab; user-select: none; overflow: hidden; }
+  .voice-clip { position: absolute; top: 0; height: 100%; background: rgba(59, 130, 246, 0.08); border-left: 1px solid rgba(59, 130, 246, 0.4); border-right: 1px solid rgba(59, 130, 246, 0.4); user-select: none; overflow: hidden; cursor: text; }
   .voice-clip canvas { display: block; pointer-events: none; }
+  .voice-clip-handle { position: absolute; top: 0; left: 0; right: 0; height: 18px; background: rgba(59, 130, 246, 0.45); cursor: grab; z-index: 3; display: flex; align-items: center; padding-left: 8px; font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.85); text-transform: uppercase; letter-spacing: 0.4px; }
+  .voice-clip-handle::before { content:'⋮⋮'; margin-right: 6px; letter-spacing: -2px; opacity: 0.7; }
+  .voice-clip:hover .voice-clip-handle { background: rgba(59, 130, 246, 0.65); }
   .voice-clip.muted { opacity: 0.5; filter: grayscale(0.7); }
   .voice-clip.selected { background: rgba(59, 130, 246, 0.18); box-shadow: inset 0 0 0 2px #fbbf24; z-index: 5; }
-  .voice-clip.dragging { cursor: grabbing; box-shadow: inset 0 0 0 2px #fff; z-index: 20; }
-  .voice-clip-del { position: absolute; top: 4px; right: 4px; width: 18px; height: 18px; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; border: none; font-size: 11px; line-height: 1; cursor: pointer; display: none; align-items: center; justify-content: center; padding: 0; z-index: 6; }
+  .voice-clip.dragging { z-index: 20; box-shadow: inset 0 0 0 2px #fff; }
+  .voice-clip.dragging .voice-clip-handle { cursor: grabbing; }
+  .voice-clip-del { position: absolute; top: 22px; right: 4px; width: 18px; height: 18px; border-radius: 50%; background: rgba(0,0,0,0.6); color: #fff; border: none; font-size: 11px; line-height: 1; cursor: pointer; display: none; align-items: center; justify-content: center; padding: 0; z-index: 6; }
   .voice-clip:hover .voice-clip-del { display: flex; }
 
   /* Zone de sélection sur la voix */
@@ -301,7 +305,7 @@
   </div>
 
   <div class="editor-info">
-    <strong>Astuces :</strong> Glisse un pad de la grille vers la timeline pour l'ajouter. Clique-glisse sur la voix pour sélectionner une zone. Tu peux <strong>Ctrl+glisser</strong> un clip voix pour embarquer les bruitages contenus dans son intervalle.
+    <strong>Astuces :</strong> Glisse un pad de la grille vers la timeline pour l'ajouter. Sur un clip voix : <strong>glisse la barre bleue du haut</strong> pour le déplacer (Ctrl+glisser embarque les bruitages), <strong>clique-glisse sur le corps</strong> pour sélectionner une zone à éditer.
   </div>
 </div>
 
@@ -1052,6 +1056,7 @@ function renderVoiceClips() {
     el.style.width = width + 'px';
     el.dataset.id = clip.id;
     el.innerHTML = `
+      <div class="voice-clip-handle" data-handle="${clip.id}">Glisser pour déplacer</div>
       <canvas data-clip-canvas="${clip.id}"></canvas>
       <button class="voice-clip-del" data-del="${clip.id}" title="Supprimer ce clip">×</button>
     `;
@@ -1068,10 +1073,13 @@ function drawClipWaveform(canvas, clip) {
   const dur = clip.sourceEnd - clip.sourceStart;
   const widthPx = Math.max(1, dur * state.zoomPxPerSec);
   const dpr = window.devicePixelRatio || 1;
+  // Le canvas occupe la zone sous le handle (handle = 18px)
+  const canvasHeight = VOICE_TRACK_HEIGHT - 18;
   canvas.style.width = widthPx + 'px';
-  canvas.style.height = VOICE_TRACK_HEIGHT + 'px';
+  canvas.style.height = canvasHeight + 'px';
+  canvas.style.marginTop = '18px';
   canvas.width = widthPx * dpr;
-  canvas.height = VOICE_TRACK_HEIGHT * dpr;
+  canvas.height = canvasHeight * dpr;
   const ctx = canvas.getContext('2d');
   ctx.setTransform(1,0,0,1,0,0);
   ctx.scale(dpr, dpr);
@@ -1081,7 +1089,7 @@ function drawClipWaveform(canvas, clip) {
   const sampleRange = sampleEnd - sampleStart;
   if (sampleRange <= 0) return;
   const samplesPerPx = sampleRange / widthPx;
-  const H = VOICE_TRACK_HEIGHT, mid = H / 2;
+  const H = canvasHeight, mid = H / 2;
   ctx.fillStyle = clip.muted ? '#475569' : '#3b82f6';
   for (let x = 0; x < widthPx; x++) {
     const s = sampleStart + Math.floor(x * samplesPerPx);
@@ -1100,105 +1108,101 @@ function drawClipWaveform(canvas, clip) {
 
 // === Interactions clip voix : sélection zone + drag du clip ===
 function setupVoiceClipInteraction(el, clip) {
-  let dragMode = null; // 'click' | 'drag' | 'selection'
-  let downX, downY, startTime, ctrlMode = false;
-  let selStartTime, attachedEvents = null;
-  const DRAG_THRESH = 5;
+  const handle = el.querySelector('.voice-clip-handle');
 
-  function onDown(e) {
-    if (e.target.dataset.del) return;
+  // ===== HANDLE = déplacement du clip =====
+  let drag = null;
+  function onHandleDown(e) {
     if (e.button !== undefined && e.button !== 0) return;
     e.preventDefault();
-    downX = e.clientX; downY = e.clientY;
-    ctrlMode = e.ctrlKey || e.metaKey || e.shiftKey;
-    startTime = clip.time;
-    // Position dans le clip en secondes (relativement à la prise)
+    e.stopPropagation();
+    drag = {
+      startX: e.clientX,
+      startTime: clip.time,
+      ctrl: e.ctrlKey || e.metaKey || e.shiftKey,
+      attached: null,
+    };
+    if (drag.ctrl) {
+      const t0 = clip.time;
+      const t1 = clip.time + (clip.sourceEnd - clip.sourceStart);
+      drag.attached = state.take.events
+        .filter(ev => ev.time >= t0 && ev.time < t1)
+        .map(ev => ({ ev, relTime: ev.time - t0 }));
+    }
+    state.selectedKind = 'voice';
+    state.selectedId = clip.id;
+    state.voiceSelection = null;
+    el.classList.add('dragging');
+    document.addEventListener('mousemove', onHandleMove);
+    document.addEventListener('mouseup', onHandleUp);
+  }
+  function onHandleMove(e) {
+    if (!drag) return;
+    const dx = e.clientX - drag.startX;
+    const dt = dx / state.zoomPxPerSec;
+    let newTime = Math.max(0, drag.startTime + dt);
+    newTime = snapToClips(clip.id, newTime, clip.sourceEnd - clip.sourceStart);
+    clip.time = newTime;
+    el.style.left = (newTime * state.zoomPxPerSec) + 'px';
+    if (drag.attached) {
+      for (const a of drag.attached) a.ev.time = newTime + a.relTime;
+    }
+    recomputeDuration();
+    renderEventBlocks();
+  }
+  function onHandleUp() {
+    if (!drag) return;
+    document.removeEventListener('mousemove', onHandleMove);
+    document.removeEventListener('mouseup', onHandleUp);
+    drag = null;
+    el.classList.remove('dragging');
+    renderTimeline();
+  }
+  handle.addEventListener('mousedown', onHandleDown);
+
+  // ===== CORPS DU CLIP = sélection de zone =====
+  let sel = null;
+  function onBodyDown(e) {
+    if (e.target.dataset.del || e.target.dataset.handle) return;
+    if (e.button !== undefined && e.button !== 0) return;
+    e.preventDefault();
     const innerRect = document.getElementById('timelineInner').getBoundingClientRect();
-    selStartTime = (e.clientX - innerRect.left) / state.zoomPxPerSec;
-    dragMode = 'click';
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
+    const startT = (e.clientX - innerRect.left) / state.zoomPxPerSec;
+    sel = { startT, moved: false };
+    state.selectedKind = 'voice';
+    state.selectedId = clip.id;
+    document.addEventListener('mousemove', onBodyMove);
+    document.addEventListener('mouseup', onBodyUp);
   }
-
-  function onMove(e) {
-    const dx = e.clientX - downX;
-    const dy = e.clientY - downY;
-    if (dragMode === 'click' && Math.hypot(dx, dy) > DRAG_THRESH) {
-      // Choisir entre drag-déplacement ou drag-sélection
-      if (Math.abs(dx) > Math.abs(dy) * 2 && Math.abs(dx) > 15) {
-        // Drag horizontal franc → on déplace le clip
-        dragMode = 'drag';
-        el.classList.add('dragging');
-        // Si Ctrl, mémoriser les bruitages dans l'intervalle
-        if (ctrlMode) {
-          const t0 = startTime;
-          const t1 = startTime + (clip.sourceEnd - clip.sourceStart);
-          attachedEvents = state.take.events
-            .filter(ev => ev.time >= t0 && ev.time < t1)
-            .map(ev => ({ ev, relTime: ev.time - t0 }));
-        }
-        state.selectedKind = 'voice';
-        state.selectedId = clip.id;
-        state.voiceSelection = null;
-      } else {
-        // Sinon : sélection de zone à l'intérieur du clip
-        dragMode = 'selection';
-        state.voiceSelection = { start: selStartTime, end: selStartTime };
-        state.selectedKind = 'voice';
-        state.selectedId = clip.id;
-      }
-    }
-    if (dragMode === 'drag') {
-      const dt = dx / state.zoomPxPerSec;
-      let newTime = Math.max(0, startTime + dt);
-      // Aimantation aux bords des autres clips voix
-      newTime = snapToClips(clip.id, newTime, clip.sourceEnd - clip.sourceStart);
-      clip.time = newTime;
-      el.style.left = (newTime * state.zoomPxPerSec) + 'px';
-      // Si Ctrl, déplacer aussi les bruitages
-      if (attachedEvents) {
-        for (const a of attachedEvents) a.ev.time = newTime + a.relTime;
-      }
-      recomputeDuration();
-      // On peut re-render les blocs bruitages au fil du drag pour l'effet visuel
-      renderEventBlocks();
-    } else if (dragMode === 'selection') {
-      const innerRect = document.getElementById('timelineInner').getBoundingClientRect();
-      const t = (e.clientX - innerRect.left) / state.zoomPxPerSec;
-      // Limiter à l'intérieur du clip
-      const clipDur = clip.sourceEnd - clip.sourceStart;
-      const tStart = Math.max(clip.time, Math.min(clip.time + clipDur, Math.min(selStartTime, t)));
-      const tEnd = Math.max(clip.time, Math.min(clip.time + clipDur, Math.max(selStartTime, t)));
-      state.voiceSelection = { start: tStart, end: tEnd, clipId: clip.id };
-      renderVoiceSelection();
-      updateSelectionToolbar();
-    }
+  function onBodyMove(e) {
+    if (!sel) return;
+    sel.moved = true;
+    const innerRect = document.getElementById('timelineInner').getBoundingClientRect();
+    const t = (e.clientX - innerRect.left) / state.zoomPxPerSec;
+    const clipDur = clip.sourceEnd - clip.sourceStart;
+    const tStart = Math.max(clip.time, Math.min(clip.time + clipDur, Math.min(sel.startT, t)));
+    const tEnd = Math.max(clip.time, Math.min(clip.time + clipDur, Math.max(sel.startT, t)));
+    state.voiceSelection = { start: tStart, end: tEnd, clipId: clip.id };
+    renderVoiceSelection();
+    updateSelectionToolbar();
   }
-
-  function onUp() {
-    document.removeEventListener('mousemove', onMove);
-    document.removeEventListener('mouseup', onUp);
-    if (dragMode === 'click') {
-      // Sélection simple du clip
-      state.selectedKind = 'voice';
-      state.selectedId = clip.id;
+  function onBodyUp() {
+    if (!sel) return;
+    document.removeEventListener('mousemove', onBodyMove);
+    document.removeEventListener('mouseup', onBodyUp);
+    if (!sel.moved) {
+      // Clic simple sur le corps : juste sélection du clip, pas de zone
       state.voiceSelection = null;
       renderTimeline();
-    } else if (dragMode === 'drag') {
-      el.classList.remove('dragging');
-      attachedEvents = null;
+    } else if (state.voiceSelection && Math.abs(state.voiceSelection.end - state.voiceSelection.start) < 0.05) {
+      state.voiceSelection = null;
       renderTimeline();
-    } else if (dragMode === 'selection') {
-      // Si la sélection est trop courte, l'annuler
-      if (state.voiceSelection && Math.abs(state.voiceSelection.end - state.voiceSelection.start) < 0.05) {
-        state.voiceSelection = null;
-      }
+    } else {
       renderTimeline();
     }
-    dragMode = null;
+    sel = null;
   }
-
-  el.addEventListener('mousedown', onDown);
+  el.addEventListener('mousedown', onBodyDown);
 }
 
 function snapToClips(currentClipId, proposedTime, currentClipDur) {
