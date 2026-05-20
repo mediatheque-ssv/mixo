@@ -80,7 +80,47 @@
   .timeline-track:last-child { border-bottom: none; }
   .timeline-track.voice-track { height: 90px; background: #0a0c10; }
   .timeline-track.events-track { height: 80px; background: #0d1015; }
-  .timeline-track-label { position: absolute; top: 6px; left: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #8a91a0; font-weight: 600; background: rgba(10,12,16,0.85); padding: 2px 6px; border-radius: 3px; z-index: 5; pointer-events: none; }
+  /* Bande latérale (header) de chaque piste */
+  .track-head {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    width: 150px; background: #14161c; border-right: 2px solid #2a2f3a;
+    z-index: 15; padding: 6px 8px; display: flex; flex-direction: column; gap: 4px;
+    font-size: 11px; box-sizing: border-box;
+  }
+  .track-head.active { background: #1d2535; box-shadow: inset 3px 0 0 #fbbf24; }
+  .track-head-row { display: flex; align-items: center; gap: 4px; }
+  .track-head-name { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: text; padding: 2px 4px; border-radius: 3px; }
+  .track-head-name:hover { background: rgba(255,255,255,0.05); }
+  .track-head-name[contenteditable="true"] { background: #0a0c10; outline: 1px solid #3b82f6; cursor: text; }
+  .track-head-type { color: #8a91a0; font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; }
+  .track-mini-btn {
+    width: 22px; height: 18px; border: 1px solid #3a4050; background: #14161c;
+    color: #8a91a0; border-radius: 3px; cursor: pointer; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600;
+  }
+  .track-mini-btn:hover { background: #2a2f3a; color: #fff; }
+  .track-mini-btn.active { background: #fbbf24; color: #14161c; border-color: #fbbf24; }
+  .track-mini-btn.mute.active { background: #ef4444; color: #fff; border-color: #ef4444; }
+  .track-mini-btn.solo.active { background: #fbbf24; color: #14161c; border-color: #fbbf24; }
+  .track-vol-row { display: flex; align-items: center; gap: 6px; font-size: 10px; color: #6a7080; }
+  .track-vol-row input[type=range] { flex: 1; }
+  .track-color-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .track-content {
+    position: absolute; left: 150px; right: 0; top: 0; bottom: 0;
+  }
+  .track-delete-btn { width: 22px; height: 18px; padding: 0; border: 1px solid #3a4050; background: #14161c; color: #8a91a0; border-radius: 3px; cursor: pointer; font-size: 14px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+  .track-delete-btn:hover { background: #4a1d1d; color: #fca5a5; border-color: #7f2828; }
+  .track-move-btn { width: 22px; height: 12px; padding: 0; border: 1px solid #3a4050; background: #14161c; color: #8a91a0; border-radius: 3px; cursor: pointer; font-size: 9px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+  .track-move-btn:hover { background: #2a2f3a; color: #fff; }
+  .track-move-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+  .track-moves { display: flex; flex-direction: column; gap: 1px; }
+
+  .add-track-bar {
+    padding: 10px 12px; background: #14161c; border: 1px dashed #2a2f3a;
+    border-radius: 8px; margin-top: 8px; display: flex; gap: 8px; align-items: center;
+  }
+  .add-track-bar button { font-size: 13px; padding: 6px 12px; }
+  .timeline-track-label { display: none; } /* obsolète, remplacé par track-head */
 
   /* Clip voix sur la piste voix */
   .voice-clip { position: absolute; top: 0; height: 100%; background: rgba(59, 130, 246, 0.08); border-left: 1px solid rgba(59, 130, 246, 0.4); border-right: 1px solid rgba(59, 130, 246, 0.4); user-select: none; overflow: hidden; cursor: text; }
@@ -226,14 +266,17 @@
 </div>
 
 <div class="panel">
-  <div class="panel-header"><div class="panel-title">Mixage</div></div>
+  <div class="panel-header">
+    <div class="panel-title">Monitoring live</div>
+    <div style="font-size: 11px; color: #6a7080;">Volumes d'écoute pendant l'enregistrement — n'affecte pas le mix final</div>
+  </div>
   <div class="mixer">
     <div class="channel">
-      <div class="channel-label"><span>Micro (voix)</span><span class="channel-value" id="micVolVal">100%</span></div>
+      <div class="channel-label"><span>Micro</span><span class="channel-value" id="micVolVal">100%</span></div>
       <input type="range" id="micVol" min="0" max="150" value="100">
     </div>
     <div class="channel">
-      <div class="channel-label"><span>Pads (bruitages)</span><span class="channel-value" id="padVolVal">80%</span></div>
+      <div class="channel-label"><span>Pads</span><span class="channel-value" id="padVolVal">80%</span></div>
       <input type="range" id="padVol" min="0" max="150" value="80">
     </div>
   </div>
@@ -288,17 +331,16 @@
   <div class="timeline-container" id="timelineContainer">
     <div class="timeline-inner" id="timelineInner">
       <div id="timelineRuler" class="timeline-ruler"></div>
-      <div class="timeline-track voice-track" id="voiceTrack">
-        <div class="timeline-track-label">Voix</div>
-        <div id="voiceClipsLayer" style="position:absolute; inset:0;"></div>
-        <div id="voiceSelection" class="voice-selection"></div>
-      </div>
-      <div class="timeline-track events-track" id="eventsTrack">
-        <div class="timeline-track-label">Bruitages</div>
-        <div id="eventsLayer" style="position:absolute; inset:0;"></div>
-      </div>
+      <div id="tracksWrapper"></div>
+      <div id="voiceSelection" class="voice-selection"></div>
       <div id="playhead" class="playhead"></div>
     </div>
+  </div>
+
+  <div class="add-track-bar">
+    <span style="font-size: 12px; color: #8a91a0;">Ajouter une piste :</span>
+    <button id="btnAddVoiceTrack">🎤 Voix</button>
+    <button id="btnAddEventsTrack">🎵 Bruitages</button>
   </div>
 
   <div id="inspectorPanel" class="inspector hidden">
@@ -486,12 +528,12 @@ const state = {
   // Prise courante
   take: null,
   /* take = {
-      voiceBuffers: { bufferId: AudioBuffer, ... },  // plusieurs sources audio possibles
-      voiceClips: [                                   // segments présents sur la timeline
-        { id, bufferId, sourceStart, sourceEnd, time, volume, muted, fadeIn, fadeOut }
-      ],
-      events: [                                       // bruitages
-        { id, padId, padName, color, time, duration, volume, muted, fadeIn, fadeOut }
+      voiceBuffers: { bufferId: AudioBuffer, ... },
+      tracks: [
+        // type 'voice' : contient des voiceClips
+        { id, type: 'voice', name, color, volume, muted, solo, clips: [{ id, bufferId, sourceStart, sourceEnd, time, volume, muted, fadeIn, fadeOut }] },
+        // type 'events' : contient des events de bruitages
+        { id, type: 'events', name, color, volume, muted, solo, events: [{ id, padId, padName, color, time, duration, volume, muted, fadeIn, fadeOut }] },
       ],
       duration: number
   } */
@@ -499,25 +541,107 @@ const state = {
   zoomPxPerSec: 60,
   selectedKind: null,   // 'voice' | 'event' | null
   selectedId: null,
-  voiceSelection: null, // { start, end } en secondes (sélection horizontale dans la voix)
+  voiceSelection: null, // { start, end, clipId, trackId }
+  activeTrackId: null,  // piste active : reçoit les nouveaux clips/events
 
   // Drag depuis la grille des pads vers la timeline
   padDragging: { padId: null, ghost: null },
 
   playback: { active: false, startCtxTime: 0, startAtTime: 0, sources: [], rafId: null },
 
-  // Historique pour undo/redo. On stocke des snapshots sérialisés de take (sans le voiceBuffer)
+  // Historique pour undo/redo
   history: { stack: [], index: -1, max: 80 },
 };
 
+// ===================== Pistes (tracks) =====================
+const TRACK_COLORS_VOICE = ['#3b82f6', '#0891b2', '#10b981', '#6366f1'];
+const TRACK_COLORS_EVENTS = ['#7c3aed', '#ea580c', '#db2777', '#ca8a04', '#9333ea'];
+const TRACK_HEAD_W = 150; // largeur de la bande latérale
+
+function makeVoiceTrack(name) {
+  const n = state.take ? state.take.tracks.filter(t => t.type === 'voice').length : 0;
+  return {
+    id: uid('tk'), type: 'voice',
+    name: name || (n === 0 ? 'Voix' : `Voix ${n + 1}`),
+    color: TRACK_COLORS_VOICE[n % TRACK_COLORS_VOICE.length],
+    volume: 1, muted: false, solo: false,
+    clips: [],
+  };
+}
+function makeEventTrack(name) {
+  const n = state.take ? state.take.tracks.filter(t => t.type === 'events').length : 0;
+  return {
+    id: uid('tk'), type: 'events',
+    name: name || (n === 0 ? 'Bruitages' : `Bruitages ${n + 1}`),
+    color: TRACK_COLORS_EVENTS[n % TRACK_COLORS_EVENTS.length],
+    volume: 1, muted: false, solo: false,
+    events: [],
+  };
+}
+function findTrack(id) {
+  if (!state.take) return null;
+  return state.take.tracks.find(t => t.id === id) || null;
+}
+function getActiveTrack(type) {
+  // Retourne la piste active si elle correspond au type, sinon la première du type
+  if (!state.take) return null;
+  if (type) {
+    const active = state.take.tracks.find(t => t.id === state.activeTrackId);
+    if (active && active.type === type) return active;
+    return state.take.tracks.find(t => t.type === type) || null;
+  }
+  return state.take.tracks.find(t => t.id === state.activeTrackId) || state.take.tracks[0] || null;
+}
+function findClipById(id) {
+  if (!state.take) return null;
+  for (const t of state.take.tracks) {
+    if (t.type !== 'voice') continue;
+    const c = t.clips.find(c => c.id === id);
+    if (c) return { clip: c, track: t };
+  }
+  return null;
+}
+function findEventById(id) {
+  if (!state.take) return null;
+  for (const t of state.take.tracks) {
+    if (t.type !== 'events') continue;
+    const e = t.events.find(e => e.id === id);
+    if (e) return { event: e, track: t };
+  }
+  return null;
+}
+// Toutes les clips voix, à plat (utile pour render global, mix, snapToClips)
+function getAllClips() {
+  if (!state.take) return [];
+  const out = [];
+  for (const t of state.take.tracks) {
+    if (t.type === 'voice') for (const c of t.clips) out.push({ clip: c, track: t });
+  }
+  return out;
+}
+function getAllEvents() {
+  if (!state.take) return [];
+  const out = [];
+  for (const t of state.take.tracks) {
+    if (t.type === 'events') for (const e of t.events) out.push({ event: e, track: t });
+  }
+  return out;
+}
+// Détermine quels tracks doivent jouer (solo logic) : si au moins un track est en solo,
+// seuls ces tracks jouent (les autres sont silencés implicitement). Sinon, tous ceux non-muted jouent.
+function trackIsAudible(track) {
+  if (!state.take) return false;
+  const anySolo = state.take.tracks.some(t => t.solo);
+  if (anySolo) return track.solo;
+  return !track.muted;
+}
+
 // ===================== Historique (undo / redo) =====================
-// On sérialise take en JSON minimal : on EXCLUT voiceBuffer (immuable, on garde la référence vivante).
-// On clone clips, events, et tous les champs scalaires.
+// On sérialise take en JSON minimal : on EXCLUT voiceBuffers (immuables, on garde la référence vivante).
 function snapshotTake() {
   if (!state.take) return null;
   return JSON.stringify({
-    voiceClips: state.take.voiceClips,
-    events: state.take.events,
+    tracks: state.take.tracks,
     duration: state.take.duration,
   });
 }
@@ -525,15 +649,17 @@ function restoreFromSnapshot(snap) {
   if (!snap || !state.take) return;
   try {
     const data = JSON.parse(snap);
-    state.take.voiceClips = data.voiceClips || [];
-    state.take.events = data.events || [];
+    state.take.tracks = data.tracks || [];
     state.take.duration = data.duration || 0;
-    // La sélection peut référencer un ID disparu : on nettoie
-    if (state.selectedKind === 'event' && !state.take.events.find(e => e.id === state.selectedId)) {
+    // Nettoyer la sélection si elle pointe sur un truc disparu
+    if (state.selectedKind === 'event' && !findEventById(state.selectedId)) {
       state.selectedKind = null; state.selectedId = null;
     }
-    if (state.selectedKind === 'voice' && !state.take.voiceClips.find(c => c.id === state.selectedId)) {
+    if (state.selectedKind === 'voice' && !findClipById(state.selectedId)) {
       state.selectedKind = null; state.selectedId = null;
+    }
+    if (state.activeTrackId && !findTrack(state.activeTrackId)) {
+      state.activeTrackId = state.take.tracks[0]?.id || null;
     }
     state.voiceSelection = null;
     renderTimeline();
@@ -712,7 +838,11 @@ function pickMimeType() {
 async function startRecording() {
   if (!state.audioCtx) { showStatus('Sélectionne un micro d\'abord.', 'error'); return; }
   await state.audioCtx.resume();
-  state.take = { voiceBuffers: {}, voiceClips: [], events: [], duration: 0 };
+  // Init take avec les 2 pistes par défaut (vides pour l'instant)
+  state.take = { voiceBuffers: {}, tracks: [], duration: 0 };
+  state.take.tracks.push(makeVoiceTrack());
+  state.take.tracks.push(makeEventTrack());
+  state.activeTrackId = state.take.tracks[1].id; // bruitages actif pendant l'enregistrement (les pads vont dedans)
   const mime = pickMimeType();
   state.micChunks = [];
   try {
@@ -792,15 +922,19 @@ async function onRecordingStop() {
       return;
     }
     const bufferId = uid('vb');
-    state.take.voiceBuffers = { [bufferId]: voiceBuffer };
-    state.take.voiceClips = [{
-      id: uid('vc'),
-      bufferId,
-      sourceStart: 0,
-      sourceEnd: voiceBuffer.duration,
-      time: 0,
-      volume: 1, muted: false, fadeIn: 0, fadeOut: 0,
-    }];
+    state.take.voiceBuffers[bufferId] = voiceBuffer;
+    // Le clip va dans la première piste voix
+    const voiceTrack = state.take.tracks.find(t => t.type === 'voice');
+    if (voiceTrack) {
+      voiceTrack.clips.push({
+        id: uid('vc'),
+        bufferId,
+        sourceStart: 0,
+        sourceEnd: voiceBuffer.duration,
+        time: 0,
+        volume: 1, muted: false, fadeIn: 0, fadeOut: 0,
+      });
+    }
     recomputeDuration();
     resetHistory();
     showEditor();
@@ -810,9 +944,21 @@ async function onRecordingStop() {
 
 function recomputeDuration() {
   if (!state.take) return;
-  const voiceEnd = Math.max(0, ...state.take.voiceClips.map(c => c.time + (c.sourceEnd - c.sourceStart)));
-  const evEnd = Math.max(0, ...state.take.events.map(e => e.time + e.duration));
-  state.take.duration = Math.max(voiceEnd, evEnd, 1);
+  let maxEnd = 0;
+  for (const t of state.take.tracks) {
+    if (t.type === 'voice') {
+      for (const c of t.clips) {
+        const e = c.time + (c.sourceEnd - c.sourceStart);
+        if (e > maxEnd) maxEnd = e;
+      }
+    } else if (t.type === 'events') {
+      for (const ev of t.events) {
+        const e = ev.time + ev.duration;
+        if (e > maxEnd) maxEnd = e;
+      }
+    }
+  }
+  state.take.duration = Math.max(maxEnd, 1);
 }
 
 // Récupère l'AudioBuffer source d'un clip voix
@@ -981,9 +1127,11 @@ function setupPadInteraction(el, pad) {
         const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
         if (inside) {
           const innerRect = document.getElementById('timelineInner').getBoundingClientRect();
-          const x = e.clientX - innerRect.left;
+          const x = e.clientX - innerRect.left - TRACK_HEAD_W;
           const t = Math.max(0, x / state.zoomPxPerSec);
-          addPadToTimeline(pad.id, t);
+          // Détecter la piste sous le curseur
+          const trackId = detectTrackAtY(e.clientY);
+          addPadToTimeline(pad.id, t, trackId);
         }
       }
       state.padDragging.padId = null;
@@ -992,10 +1140,18 @@ function setupPadInteraction(el, pad) {
   el.addEventListener('mousedown', onDown);
 }
 
-function addPadToTimeline(padId, time) {
+function addPadToTimeline(padId, time, targetTrackId) {
   const pad = state.pads.find(p => p.id === padId);
   const buf = state.padBuffers.get(padId);
   if (!pad || !buf || !state.take) return;
+  // Choisir la piste : trackId explicite si fourni, sinon piste active de type events, sinon première
+  let track = targetTrackId ? findTrack(targetTrackId) : null;
+  if (!track || track.type !== 'events') track = getActiveTrack('events');
+  if (!track) {
+    // Pas de piste bruitages : on en crée une
+    track = makeEventTrack();
+    state.take.tracks.push(track);
+  }
   const ev = {
     id: uid('e'),
     padId: pad.id,
@@ -1004,13 +1160,14 @@ function addPadToTimeline(padId, time) {
     time, duration: buf.duration,
     volume: 1, muted: false, fadeIn: 0, fadeOut: 0,
   };
-  state.take.events.push(ev);
+  track.events.push(ev);
   recomputeDuration();
   state.selectedKind = 'event';
   state.selectedId = ev.id;
+  state.activeTrackId = track.id;
   pushHistory();
   renderTimeline();
-  showStatus(`Bruitage "${pad.name}" ajouté à ${formatTime(time)}`, 'info');
+  showStatus(`"${pad.name}" → ${track.name} à ${formatTime(time)}`, 'info');
 }
 
 async function reorderPads(d, t) {
@@ -1080,8 +1237,19 @@ function triggerPad(id) {
   if (!pad || !buf) return;
   if (state.isRecording && !state.isPaused) {
     const t = state.audioCtx.currentTime - state.recStartCtxTime - state.pausedDuration;
-    if (!state.take) state.take = { voiceBuffers: {}, voiceClips: [], events: [], duration: 0 };
-    state.take.events.push({
+    if (!state.take) {
+      state.take = { voiceBuffers: {}, tracks: [], duration: 0 };
+      state.take.tracks.push(makeVoiceTrack());
+      state.take.tracks.push(makeEventTrack());
+      state.activeTrackId = state.take.tracks[1].id;
+    }
+    let track = getActiveTrack('events');
+    if (!track) {
+      track = makeEventTrack();
+      state.take.tracks.push(track);
+      state.activeTrackId = track.id;
+    }
+    track.events.push({
       id: uid('e'),
       padId: pad.id, padName: pad.name, color: pad.color,
       time: Math.max(0, t), duration: buf.duration,
@@ -1141,7 +1309,7 @@ async function deletePad(id) {
 function showEditor() {
   document.getElementById('editorPanel').classList.remove('hidden');
   setTimeout(() => {
-    const w = document.getElementById('timelineContainer').clientWidth - 30;
+    const w = document.getElementById('timelineContainer').clientWidth - TRACK_HEAD_W - 30;
     state.zoomPxPerSec = Math.max(20, w / Math.max(state.take.duration, 5));
     renderTimeline();
     document.getElementById('editorPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1159,7 +1327,7 @@ function hideEditor() {
 
 function getTimelineWidth() {
   if (!state.take) return 800;
-  return Math.max(400, state.take.duration * state.zoomPxPerSec + 40);
+  return Math.max(400, TRACK_HEAD_W + state.take.duration * state.zoomPxPerSec + 40);
 }
 
 function renderTimeline() {
@@ -1167,10 +1335,10 @@ function renderTimeline() {
   const w = getTimelineWidth();
   document.getElementById('timelineInner').style.width = w + 'px';
   document.getElementById('timelineRuler').style.width = w + 'px';
-  document.querySelectorAll('.timeline-track').forEach(el => el.style.width = w + 'px');
+  // La règle commence après la bande latérale
+  document.getElementById('timelineRuler').style.paddingLeft = TRACK_HEAD_W + 'px';
   renderRuler(w);
-  renderVoiceClips();
-  renderEventBlocks();
+  renderTracks(w);
   renderVoiceSelection();
   renderInspector();
   updateSelectionToolbar();
@@ -1185,7 +1353,7 @@ function renderRuler(w) {
   let step = 1;
   for (const c of candidates) { if (c * state.zoomPxPerSec >= 50) { step = c; break; } }
   for (let t = 0; t <= dur; t += step) {
-    const x = t * state.zoomPxPerSec;
+    const x = TRACK_HEAD_W + t * state.zoomPxPerSec;
     const tick = document.createElement('div');
     tick.className = 'ruler-tick'; tick.style.left = x + 'px';
     ruler.appendChild(tick);
@@ -1196,12 +1364,169 @@ function renderRuler(w) {
   }
 }
 
-// === Rendu des clips voix ===
-function renderVoiceClips() {
-  const layer = document.getElementById('voiceClipsLayer');
-  layer.innerHTML = '';
-  if (!state.take || state.take.voiceClips.length === 0) return;
-  state.take.voiceClips.forEach(clip => {
+// === Rendu des pistes (dynamique) ===
+function renderTracks(w) {
+  const wrap = document.getElementById('tracksWrapper');
+  wrap.innerHTML = '';
+  if (!state.take) return;
+  state.take.tracks.forEach((track, idx) => {
+    const trackEl = document.createElement('div');
+    trackEl.className = 'timeline-track ' + (track.type === 'voice' ? 'voice-track' : 'events-track');
+    trackEl.style.width = w + 'px';
+    trackEl.dataset.trackId = track.id;
+
+    // Header
+    const head = document.createElement('div');
+    head.className = 'track-head' + (track.id === state.activeTrackId ? ' active' : '');
+    const icon = track.type === 'voice' ? '🎤' : '🎵';
+    const audibleHint = !trackIsAudible(track) ? '<span style="color:#ef4444">⨯</span>' : '';
+    head.innerHTML = `
+      <div class="track-head-row">
+        <span class="track-color-dot" style="background:${track.color}"></span>
+        <span style="font-size:13px">${icon}</span>
+        <span class="track-head-name" data-track-name="${track.id}" title="Double-clic pour renommer">${escapeHtml(track.name)}</span>
+        ${audibleHint}
+      </div>
+      <div class="track-head-row">
+        <button class="track-mini-btn mute ${track.muted ? 'active' : ''}" data-mute="${track.id}" title="Mute">M</button>
+        <button class="track-mini-btn solo ${track.solo ? 'active' : ''}" data-solo="${track.id}" title="Solo">S</button>
+        <div class="track-moves">
+          <button class="track-move-btn" data-move-up="${track.id}" title="Monter" ${idx === 0 ? 'disabled' : ''}>▲</button>
+          <button class="track-move-btn" data-move-down="${track.id}" title="Descendre" ${idx === state.take.tracks.length - 1 ? 'disabled' : ''}>▼</button>
+        </div>
+        <button class="track-delete-btn" data-delete-track="${track.id}" title="Supprimer cette piste">×</button>
+      </div>
+      <div class="track-vol-row">
+        <span>Vol</span>
+        <input type="range" min="0" max="150" value="${Math.round((track.volume ?? 1) * 100)}" data-track-vol="${track.id}">
+        <span style="min-width:28px;text-align:right">${Math.round((track.volume ?? 1) * 100)}%</span>
+      </div>
+    `;
+    trackEl.appendChild(head);
+
+    // Content (zone des clips/events)
+    const content = document.createElement('div');
+    content.className = 'track-content';
+    content.style.width = (w - TRACK_HEAD_W) + 'px';
+    content.dataset.trackContent = track.id;
+    trackEl.appendChild(content);
+
+    // Remplir le contenu selon le type
+    if (track.type === 'voice') renderVoiceClipsInTrack(content, track);
+    else renderEventsInTrack(content, track);
+
+    // Clic sur le header = activer la piste
+    head.addEventListener('click', e => {
+      if (e.target.closest('button')) return;
+      state.activeTrackId = track.id;
+      renderTracks(w);
+    });
+
+    // Boutons header
+    head.querySelector(`[data-mute="${track.id}"]`).addEventListener('click', e => {
+      e.stopPropagation();
+      track.muted = !track.muted;
+      pushHistory();
+      renderTimeline();
+    });
+    head.querySelector(`[data-solo="${track.id}"]`).addEventListener('click', e => {
+      e.stopPropagation();
+      track.solo = !track.solo;
+      pushHistory();
+      renderTimeline();
+    });
+    const mvUp = head.querySelector(`[data-move-up="${track.id}"]`);
+    if (mvUp) mvUp.addEventListener('click', e => { e.stopPropagation(); moveTrack(track.id, -1); });
+    const mvDn = head.querySelector(`[data-move-down="${track.id}"]`);
+    if (mvDn) mvDn.addEventListener('click', e => { e.stopPropagation(); moveTrack(track.id, +1); });
+    head.querySelector(`[data-delete-track="${track.id}"]`).addEventListener('click', e => {
+      e.stopPropagation();
+      deleteTrack(track.id);
+    });
+    const volSlider = head.querySelector(`[data-track-vol="${track.id}"]`);
+    volSlider.addEventListener('input', e => {
+      const v = parseInt(e.target.value);
+      track.volume = v / 100;
+      // Mettre à jour le label inline
+      e.target.nextElementSibling.textContent = v + '%';
+    });
+    volSlider.addEventListener('change', () => pushHistory());
+
+    // Renommer au double-clic
+    const nameEl = head.querySelector(`[data-track-name="${track.id}"]`);
+    nameEl.addEventListener('dblclick', e => { e.stopPropagation(); startRenameTrack(nameEl, track); });
+
+    wrap.appendChild(trackEl);
+  });
+}
+
+function startRenameTrack(nameEl, track) {
+  nameEl.contentEditable = 'true';
+  nameEl.focus();
+  // Sélectionner tout le texte
+  const range = document.createRange();
+  range.selectNodeContents(nameEl);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  const finish = (commit) => {
+    nameEl.contentEditable = 'false';
+    nameEl.removeEventListener('blur', onBlur);
+    nameEl.removeEventListener('keydown', onKey);
+    const newName = nameEl.textContent.trim();
+    if (commit && newName && newName !== track.name) {
+      track.name = newName;
+      pushHistory();
+    }
+    renderTimeline();
+  };
+  const onBlur = () => finish(true);
+  const onKey = e => {
+    if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+    if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+  };
+  nameEl.addEventListener('blur', onBlur);
+  nameEl.addEventListener('keydown', onKey);
+}
+
+function moveTrack(trackId, dir) {
+  const idx = state.take.tracks.findIndex(t => t.id === trackId);
+  if (idx < 0) return;
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= state.take.tracks.length) return;
+  const [t] = state.take.tracks.splice(idx, 1);
+  state.take.tracks.splice(newIdx, 0, t);
+  pushHistory();
+  renderTimeline();
+}
+
+function deleteTrack(trackId) {
+  const track = findTrack(trackId);
+  if (!track) return;
+  const count = track.type === 'voice' ? track.clips.length : track.events.length;
+  let msg = `Supprimer la piste "${track.name}"`;
+  if (count > 0) msg += ` et ses ${count} ${track.type === 'voice' ? 'clip(s)' : 'bruitage(s)'}`;
+  msg += ' ?';
+  if (!confirm(msg)) return;
+  state.take.tracks = state.take.tracks.filter(t => t.id !== trackId);
+  if (state.activeTrackId === trackId) state.activeTrackId = state.take.tracks[0]?.id || null;
+  recomputeDuration();
+  pushHistory();
+  renderTimeline();
+}
+
+function addNewTrack(type) {
+  if (!state.take) return;
+  const track = type === 'voice' ? makeVoiceTrack() : makeEventTrack();
+  state.take.tracks.push(track);
+  state.activeTrackId = track.id;
+  pushHistory();
+  renderTimeline();
+}
+
+// === Rendu des clips voix dans une piste ===
+function renderVoiceClipsInTrack(container, track) {
+  track.clips.forEach(clip => {
     const dur = clip.sourceEnd - clip.sourceStart;
     if (dur <= 0) return;
     const left = clip.time * state.zoomPxPerSec;
@@ -1218,14 +1543,14 @@ function renderVoiceClips() {
       <canvas data-clip-canvas="${clip.id}"></canvas>
       <button class="voice-clip-del" data-del="${clip.id}" title="Supprimer ce clip">×</button>
     `;
-    layer.appendChild(el);
-    drawClipWaveform(el.querySelector('canvas'), clip);
+    container.appendChild(el);
+    drawClipWaveform(el.querySelector('canvas'), clip, track.color);
     el.querySelector('.voice-clip-del').addEventListener('click', e => { e.stopPropagation(); removeVoiceClip(clip.id); });
-    setupVoiceClipInteraction(el, clip);
+    setupVoiceClipInteraction(el, clip, track);
   });
 }
 
-function drawClipWaveform(canvas, clip) {
+function drawClipWaveform(canvas, clip, color) {
   const buf = getClipBuffer(clip);
   if (!canvas || !buf) return;
   const dur = clip.sourceEnd - clip.sourceStart;
@@ -1247,7 +1572,7 @@ function drawClipWaveform(canvas, clip) {
   if (sampleRange <= 0) return;
   const samplesPerPx = sampleRange / widthPx;
   const H = canvasHeight, mid = H / 2;
-  ctx.fillStyle = clip.muted ? '#475569' : '#3b82f6';
+  ctx.fillStyle = clip.muted ? '#475569' : (color || '#3b82f6');
   for (let x = 0; x < widthPx; x++) {
     const s = sampleStart + Math.floor(x * samplesPerPx);
     const e = sampleStart + Math.floor((x + 1) * samplesPerPx);
@@ -1264,7 +1589,7 @@ function drawClipWaveform(canvas, clip) {
 }
 
 // === Interactions clip voix : sélection zone + drag du clip ===
-function setupVoiceClipInteraction(el, clip) {
+function setupVoiceClipInteraction(el, clip, track) {
   const handle = el.querySelector('.voice-clip-handle');
 
   // ===== HANDLE = déplacement du clip =====
@@ -1275,19 +1600,29 @@ function setupVoiceClipInteraction(el, clip) {
     e.stopPropagation();
     drag = {
       startX: e.clientX,
+      startY: e.clientY,
       startTime: clip.time,
       ctrl: e.ctrlKey || e.metaKey || e.shiftKey,
       attached: null,
+      originTrackId: track.id,
     };
     if (drag.ctrl) {
+      // Embarquer tous les events qui tombent dans l'intervalle du clip, toutes pistes confondues
       const t0 = clip.time;
       const t1 = clip.time + (clip.sourceEnd - clip.sourceStart);
-      drag.attached = state.take.events
-        .filter(ev => ev.time >= t0 && ev.time < t1)
-        .map(ev => ({ ev, relTime: ev.time - t0 }));
+      drag.attached = [];
+      for (const t of state.take.tracks) {
+        if (t.type !== 'events') continue;
+        for (const ev of t.events) {
+          if (ev.time >= t0 && ev.time < t1) {
+            drag.attached.push({ ev, relTime: ev.time - t0 });
+          }
+        }
+      }
     }
     state.selectedKind = 'voice';
     state.selectedId = clip.id;
+    state.activeTrackId = track.id;
     state.voiceSelection = null;
     el.classList.add('dragging');
     document.addEventListener('mousemove', onHandleMove);
@@ -1305,16 +1640,25 @@ function setupVoiceClipInteraction(el, clip) {
       for (const a of drag.attached) a.ev.time = newTime + a.relTime;
     }
     recomputeDuration();
-    renderEventBlocks();
   }
-  function onHandleUp() {
+  function onHandleUp(e) {
     if (!drag) return;
     const moved = drag.startTime !== clip.time;
+    // Détecter si lâché sur une autre piste voix → déplacement entre pistes
+    const targetTrackId = detectTrackAtY(e.clientY);
+    const targetTrack = targetTrackId ? findTrack(targetTrackId) : null;
+    let movedToTrack = false;
+    if (targetTrack && targetTrack.type === 'voice' && targetTrack.id !== drag.originTrackId) {
+      // Retirer le clip de l'origine, l'ajouter à la cible
+      track.clips = track.clips.filter(c => c.id !== clip.id);
+      targetTrack.clips.push(clip);
+      movedToTrack = true;
+    }
     document.removeEventListener('mousemove', onHandleMove);
     document.removeEventListener('mouseup', onHandleUp);
     drag = null;
     el.classList.remove('dragging');
-    if (moved) pushHistory();
+    if (moved || movedToTrack) pushHistory();
     renderTimeline();
   }
   handle.addEventListener('mousedown', onHandleDown);
@@ -1325,19 +1669,19 @@ function setupVoiceClipInteraction(el, clip) {
     if (e.target.dataset.del || e.target.dataset.handle) return;
     if (e.button !== undefined && e.button !== 0) return;
     e.preventDefault();
-    const innerRect = document.getElementById('timelineInner').getBoundingClientRect();
-    const startT = (e.clientX - innerRect.left) / state.zoomPxPerSec;
+    // Position depuis l'origine de la timeline (corps du clip)
+    const startT = mouseToTimelineX(e.clientX);
     sel = { startT, moved: false };
     state.selectedKind = 'voice';
     state.selectedId = clip.id;
+    state.activeTrackId = track.id;
     document.addEventListener('mousemove', onBodyMove);
     document.addEventListener('mouseup', onBodyUp);
   }
   function onBodyMove(e) {
     if (!sel) return;
     sel.moved = true;
-    const innerRect = document.getElementById('timelineInner').getBoundingClientRect();
-    const t = (e.clientX - innerRect.left) / state.zoomPxPerSec;
+    const t = mouseToTimelineX(e.clientX);
     const clipDur = clip.sourceEnd - clip.sourceStart;
     const tStart = Math.max(clip.time, Math.min(clip.time + clipDur, Math.min(sel.startT, t)));
     const tEnd = Math.max(clip.time, Math.min(clip.time + clipDur, Math.max(sel.startT, t)));
@@ -1350,7 +1694,6 @@ function setupVoiceClipInteraction(el, clip) {
     document.removeEventListener('mousemove', onBodyMove);
     document.removeEventListener('mouseup', onBodyUp);
     if (!sel.moved) {
-      // Clic simple sur le corps : juste sélection du clip, pas de zone
       state.voiceSelection = null;
       renderTimeline();
     } else if (state.voiceSelection && Math.abs(state.voiceSelection.end - state.voiceSelection.start) < 0.05) {
@@ -1364,22 +1707,40 @@ function setupVoiceClipInteraction(el, clip) {
   el.addEventListener('mousedown', onBodyDown);
 }
 
+// Convertit une coordonnée X souris en temps timeline (en tenant compte de TRACK_HEAD_W)
+function mouseToTimelineX(clientX) {
+  const innerRect = document.getElementById('timelineInner').getBoundingClientRect();
+  return Math.max(0, (clientX - innerRect.left - TRACK_HEAD_W) / state.zoomPxPerSec);
+}
+
+// Détecte quelle piste se trouve sous une coordonnée Y donnée. Retourne trackId ou null.
+function detectTrackAtY(clientY) {
+  const wrap = document.getElementById('tracksWrapper');
+  if (!wrap) return null;
+  const tracksEls = wrap.querySelectorAll('.timeline-track');
+  for (const el of tracksEls) {
+    const r = el.getBoundingClientRect();
+    if (clientY >= r.top && clientY <= r.bottom) {
+      return el.dataset.trackId;
+    }
+  }
+  return null;
+}
+
 function snapToClips(currentClipId, proposedTime, currentClipDur) {
-  // Calcule les bords des autres clips voix
+  // Tous les clips voix, toutes pistes confondues
   const edges = [];
-  state.take.voiceClips.forEach(c => {
-    if (c.id === currentClipId) return;
+  for (const { clip: c } of getAllClips()) {
+    if (c.id === currentClipId) continue;
     edges.push(c.time);
     edges.push(c.time + (c.sourceEnd - c.sourceStart));
-  });
+  }
   edges.push(0);
   let bestT = proposedTime;
   let bestDist = SNAP_THRESHOLD;
   for (const e of edges) {
-    // Snap du bord gauche du clip déplacé sur ce bord
     const dLeft = Math.abs(proposedTime - e);
     if (dLeft < bestDist) { bestDist = dLeft; bestT = e; }
-    // Snap du bord droit sur ce bord
     const dRight = Math.abs((proposedTime + currentClipDur) - e);
     if (dRight < bestDist) { bestDist = dRight; bestT = e - currentClipDur; }
   }
@@ -1391,7 +1752,8 @@ function renderVoiceSelection() {
   const el = document.getElementById('voiceSelection');
   if (!sel) { el.classList.remove('visible'); return; }
   el.classList.add('visible');
-  el.style.left = (sel.start * state.zoomPxPerSec) + 'px';
+  // Le selection overlay est positionné en absolu dans timeline-inner, donc on tient compte de TRACK_HEAD_W
+  el.style.left = (TRACK_HEAD_W + sel.start * state.zoomPxPerSec) + 'px';
   el.style.width = Math.max(2, (sel.end - sel.start) * state.zoomPxPerSec) + 'px';
 }
 
@@ -1408,7 +1770,9 @@ function updateSelectionToolbar() {
 }
 
 function removeVoiceClip(id) {
-  state.take.voiceClips = state.take.voiceClips.filter(c => c.id !== id);
+  const found = findClipById(id);
+  if (!found) return;
+  found.track.clips = found.track.clips.filter(c => c.id !== id);
   if (state.selectedKind === 'voice' && state.selectedId === id) {
     state.selectedKind = null; state.selectedId = null;
   }
@@ -1417,11 +1781,9 @@ function removeVoiceClip(id) {
   renderTimeline();
 }
 
-// === Rendu des blocs bruitages ===
-function renderEventBlocks() {
-  const layer = document.getElementById('eventsLayer');
-  layer.innerHTML = '';
-  state.take.events.forEach(ev => {
+// === Rendu des blocs bruitages dans une piste ===
+function renderEventsInTrack(container, track) {
+  track.events.forEach(ev => {
     const block = document.createElement('div');
     block.className = 'event-block'
       + (state.selectedKind === 'event' && state.selectedId === ev.id ? ' selected' : '')
@@ -1448,29 +1810,32 @@ function renderEventBlocks() {
       <span class="event-block-name">${escapeHtml(ev.padName)}${ev.muted ? ' 🔇' : ''}</span>
       <button class="event-block-del" data-del="${ev.id}">×</button>
     `;
-    layer.appendChild(block);
+    container.appendChild(block);
     block.addEventListener('click', e => {
       if (e.target.dataset.del) return;
       state.selectedKind = 'event';
       state.selectedId = ev.id;
+      state.activeTrackId = track.id;
       state.voiceSelection = null;
       renderTimeline();
     });
     block.querySelector('.event-block-del').addEventListener('click', e => { e.stopPropagation(); deleteEvent(ev.id); });
-    makeEventDraggable(block, ev);
+    makeEventDraggable(block, ev, track);
   });
 }
 
-function makeEventDraggable(block, ev) {
-  let startX, startTime;
+function makeEventDraggable(block, ev, track) {
+  let startX, startTime, originTrackId;
   function onDown(clientX, e) {
     if (e && e.target.dataset.del) return;
     if (e && e.preventDefault) e.preventDefault();
     startX = clientX;
     startTime = ev.time;
+    originTrackId = track.id;
     block.classList.add('dragging');
     state.selectedKind = 'event';
     state.selectedId = ev.id;
+    state.activeTrackId = track.id;
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onUp);
   }
@@ -1483,19 +1848,30 @@ function makeEventDraggable(block, ev) {
     recomputeDuration();
   }
   function onMouseMove(e) { moveTo(e.clientX); }
-  function onUp() {
+  function onUp(e) {
     const moved = startTime !== ev.time;
+    // Détecter si lâché sur une autre piste events
+    const targetTrackId = detectTrackAtY(e.clientY);
+    const targetTrack = targetTrackId ? findTrack(targetTrackId) : null;
+    let movedToTrack = false;
+    if (targetTrack && targetTrack.type === 'events' && targetTrack.id !== originTrackId) {
+      track.events = track.events.filter(x => x.id !== ev.id);
+      targetTrack.events.push(ev);
+      movedToTrack = true;
+    }
     block.classList.remove('dragging');
     document.removeEventListener('mousemove', onMouseMove);
     document.removeEventListener('mouseup', onUp);
-    if (moved) pushHistory();
+    if (moved || movedToTrack) pushHistory();
     renderTimeline();
   }
   block.addEventListener('mousedown', e => onDown(e.clientX, e));
 }
 
 function deleteEvent(id) {
-  state.take.events = state.take.events.filter(e => e.id !== id);
+  const found = findEventById(id);
+  if (!found) return;
+  found.track.events = found.track.events.filter(e => e.id !== id);
   if (state.selectedKind === 'event' && state.selectedId === id) {
     state.selectedKind = null; state.selectedId = null;
   }
@@ -1513,15 +1889,17 @@ function renderInspector() {
   }
   let item, label, color;
   if (state.selectedKind === 'event') {
-    item = state.take.events.find(e => e.id === state.selectedId);
-    if (!item) { panel.classList.add('hidden'); return; }
+    const found = findEventById(state.selectedId);
+    if (!found) { panel.classList.add('hidden'); return; }
+    item = found.event;
     label = item.padName;
     color = item.color;
   } else {
-    item = state.take.voiceClips.find(c => c.id === state.selectedId);
-    if (!item) { panel.classList.add('hidden'); return; }
-    label = 'Clip voix';
-    color = '#3b82f6';
+    const found = findClipById(state.selectedId);
+    if (!found) { panel.classList.add('hidden'); return; }
+    item = found.clip;
+    label = 'Clip voix (' + found.track.name + ')';
+    color = found.track.color;
   }
   panel.classList.remove('hidden');
   document.getElementById('inspectorSwatch').style.background = color;
@@ -1540,14 +1918,17 @@ function renderInspector() {
   document.getElementById('evFadeIn').max = Math.min(50, maxFadeDeci);
   document.getElementById('evFadeOut').max = Math.min(50, maxFadeDeci);
   document.getElementById('btnMuteEvent').textContent = item.muted ? '🔊' : '🔇';
-  // Duplique : seulement pour les events
   document.getElementById('btnDuplicateEvent').style.display = state.selectedKind === 'event' ? 'inline-flex' : 'none';
 }
 
 function getSelectedItem() {
   if (!state.selectedKind || !state.selectedId || !state.take) return null;
-  if (state.selectedKind === 'event') return state.take.events.find(e => e.id === state.selectedId) || null;
-  return state.take.voiceClips.find(c => c.id === state.selectedId) || null;
+  if (state.selectedKind === 'event') {
+    const found = findEventById(state.selectedId);
+    return found ? found.event : null;
+  }
+  const found = findClipById(state.selectedId);
+  return found ? found.clip : null;
 }
 
 // === Inspector controls ===
@@ -1587,9 +1968,9 @@ document.getElementById('btnDeleteEvent').addEventListener('click', () => {
 });
 document.getElementById('btnDuplicateEvent').addEventListener('click', () => {
   if (state.selectedKind !== 'event') return;
-  const ev = state.take.events.find(e => e.id === state.selectedId); if (!ev) return;
-  const newEv = { ...ev, id: uid('e'), time: ev.time + ev.duration + 0.1 };
-  state.take.events.push(newEv);
+  const found = findEventById(state.selectedId); if (!found) return;
+  const newEv = { ...found.event, id: uid('e'), time: found.event.time + found.event.duration + 0.1 };
+  found.track.events.push(newEv);
   state.selectedId = newEv.id;
   recomputeDuration();
   pushHistory();
@@ -1601,15 +1982,16 @@ document.getElementById('btnZoomIn').addEventListener('click', () => { state.zoo
 document.getElementById('btnZoomOut').addEventListener('click', () => { state.zoomPxPerSec = Math.max(10, state.zoomPxPerSec / 1.5); renderTimeline(); });
 document.getElementById('btnZoomFit').addEventListener('click', () => {
   if (!state.take) return;
-  const w = document.getElementById('timelineContainer').clientWidth - 30;
-  state.zoomPxPerSec = Math.max(10, w / state.take.duration);
+  const w = document.getElementById('timelineContainer').clientWidth - TRACK_HEAD_W - 30;
+  state.zoomPxPerSec = Math.max(10, w / Math.max(state.take.duration, 5));
   renderTimeline();
 });
 
 // Clic sur la règle ou dans le vide de la timeline → repositionne playhead
 function timelineBackgroundClick(e) {
   if (e.target.closest('.event-block') || e.target.closest('.voice-clip')) return;
-  if (e.target.closest('button')) return;
+  if (e.target.closest('.track-head')) return; // ne pas réagir sur les headers de pistes
+  if (e.target.closest('button') || e.target.closest('input')) return;
   // Désélectionne
   if (state.selectedKind || state.voiceSelection) {
     state.selectedKind = null; state.selectedId = null;
@@ -1618,19 +2000,20 @@ function timelineBackgroundClick(e) {
   }
   const inner = document.getElementById('timelineInner');
   const rect = inner.getBoundingClientRect();
-  const x = e.clientX - rect.left;
+  // Soustraire TRACK_HEAD_W pour obtenir la position dans la zone des clips
+  const x = e.clientX - rect.left - TRACK_HEAD_W;
+  if (x < 0) return; // clic dans la zone des headers
   const t = x / state.zoomPxPerSec;
   if (t >= 0 && state.take && t <= state.take.duration) {
     setPlayheadTime(t);
   }
 }
-document.getElementById('timelineRuler').addEventListener('click', timelineBackgroundClick);
-document.getElementById('eventsTrack').addEventListener('click', timelineBackgroundClick);
+document.getElementById('timelineContainer').addEventListener('click', timelineBackgroundClick);
 
 function setPlayheadTime(t) {
   const ph = document.getElementById('playhead');
   ph.classList.add('visible');
-  ph.style.left = (t * state.zoomPxPerSec) + 'px';
+  ph.style.left = (TRACK_HEAD_W + t * state.zoomPxPerSec) + 'px';
   state.playback.startAtTime = t;
 }
 
@@ -1644,13 +2027,25 @@ document.getElementById('btnSelClear').addEventListener('click', () => { state.v
 async function applySelectionAction(action) {
   const sel = state.voiceSelection;
   if (!sel || sel.end - sel.start < 0.05) return;
-  // Trouver le clip contenant la sélection
-  const targetClip = state.take.voiceClips.find(c => c.id === sel.clipId)
-    || state.take.voiceClips.find(c => sel.start >= c.time && sel.end <= c.time + (c.sourceEnd - c.sourceStart));
-  if (!targetClip) { showStatus("Sélection en dehors d'un clip.", 'error'); return; }
+  // Trouver le clip contenant la sélection (toutes pistes voix)
+  let foundClip = null;
+  if (sel.clipId) {
+    const f = findClipById(sel.clipId);
+    if (f) foundClip = f;
+  }
+  if (!foundClip) {
+    for (const f of getAllClips()) {
+      const c = f.clip;
+      if (sel.start >= c.time && sel.end <= c.time + (c.sourceEnd - c.sourceStart)) {
+        foundClip = f; break;
+      }
+    }
+  }
+  if (!foundClip) { showStatus("Sélection en dehors d'un clip.", 'error'); return; }
+  const targetClip = foundClip.clip;
+  const targetTrack = foundClip.track;
   const clipDur = targetClip.sourceEnd - targetClip.sourceStart;
 
-  // Position de la sélection à l'intérieur du clip
   const localStart = Math.max(0, sel.start - targetClip.time);
   const localEnd = Math.min(clipDur, sel.end - targetClip.time);
   const srcSelStart = targetClip.sourceStart + localStart;
@@ -1666,9 +2061,9 @@ async function applySelectionAction(action) {
   }
 
   if (action === 'mute') {
-    splitClipForMute(targetClip, localStart, localEnd);
+    splitClipForMute(targetClip, targetTrack, localStart, localEnd);
   } else if (action === 'cut' || action === 'delete') {
-    removeRangeFromClip(targetClip, localStart, localEnd);
+    removeRangeFromClip(targetClip, targetTrack, localStart, localEnd);
   }
 
   state.voiceSelection = null;
@@ -1694,13 +2089,14 @@ function extractAudioBuffer(srcBuffer, startSec, endSec) {
   return out;
 }
 
-function splitClipForMute(clip, localStart, localEnd) {
+function splitClipForMute(clip, track, localStart, localEnd) {
   const clipDur = clip.sourceEnd - clip.sourceStart;
   if (localEnd <= 0 || localStart >= clipDur) return;
   localStart = Math.max(0, localStart);
   localEnd = Math.min(clipDur, localEnd);
 
-  const idx = state.take.voiceClips.indexOf(clip);
+  const idx = track.clips.indexOf(clip);
+  if (idx < 0) return;
   const newClips = [];
   if (localStart > 0.001) {
     newClips.push({
@@ -1727,16 +2123,17 @@ function splitClipForMute(clip, localStart, localEnd) {
       volume: clip.volume, muted: clip.muted, fadeIn: 0, fadeOut: clip.fadeOut,
     });
   }
-  state.take.voiceClips.splice(idx, 1, ...newClips);
+  track.clips.splice(idx, 1, ...newClips);
 }
 
-function removeRangeFromClip(clip, localStart, localEnd) {
+function removeRangeFromClip(clip, track, localStart, localEnd) {
   const clipDur = clip.sourceEnd - clip.sourceStart;
   if (localEnd <= 0 || localStart >= clipDur) return;
   localStart = Math.max(0, localStart);
   localEnd = Math.min(clipDur, localEnd);
 
-  const idx = state.take.voiceClips.indexOf(clip);
+  const idx = track.clips.indexOf(clip);
+  if (idx < 0) return;
   const newClips = [];
   if (localStart > 0.001) {
     newClips.push({
@@ -1747,8 +2144,6 @@ function removeRangeFromClip(clip, localStart, localEnd) {
       volume: clip.volume, muted: clip.muted, fadeIn: clip.fadeIn, fadeOut: 0,
     });
   }
-  // La partie centrale est éliminée. La partie après reste à sa position absolue
-  // (les autres clips et events ne sont PAS décalés — choix discuté).
   if (clipDur - localEnd > 0.001) {
     newClips.push({
       id: uid('vc'), bufferId: clip.bufferId,
@@ -1758,7 +2153,7 @@ function removeRangeFromClip(clip, localStart, localEnd) {
       volume: clip.volume, muted: clip.muted, fadeIn: 0, fadeOut: clip.fadeOut,
     });
   }
-  state.take.voiceClips.splice(idx, 1, ...newClips);
+  track.clips.splice(idx, 1, ...newClips);
 }
 
 // ===================== Scinder : sélection (2 coupes) ou playhead (1 coupe) =====================
@@ -1787,31 +2182,34 @@ function splitAtPlayhead() {
   }
 }
 
-// Découpe tous les clips voix qui chevauchent les temps donnés (en secondes absolues).
-// Retourne true si au moins une coupe a été faite.
+// Découpe tous les clips voix qui chevauchent les temps donnés (toutes pistes voix).
 function splitAtTimes(times) {
   let didSomething = false;
-  // On trie pour éviter les soucis d'ordre
   const sorted = [...times].sort((a, b) => a - b);
   for (const t of sorted) {
-    // À chaque temps, on cherche le clip à scinder (peut avoir changé après les coupes précédentes)
-    const clip = state.take.voiceClips.find(c => t > c.time + 0.01 && t < c.time + (c.sourceEnd - c.sourceStart) - 0.01);
-    if (!clip) continue;
-    const localT = t - clip.time;
-    const idx = state.take.voiceClips.indexOf(clip);
+    // Chercher dans toutes les pistes voix
+    let foundTrack = null, foundClip = null;
+    for (const track of state.take.tracks) {
+      if (track.type !== 'voice') continue;
+      const c = track.clips.find(c => t > c.time + 0.01 && t < c.time + (c.sourceEnd - c.sourceStart) - 0.01);
+      if (c) { foundTrack = track; foundClip = c; break; }
+    }
+    if (!foundClip) continue;
+    const localT = t - foundClip.time;
+    const idx = foundTrack.clips.indexOf(foundClip);
     const left = {
-      id: uid('vc'), bufferId: clip.bufferId,
-      sourceStart: clip.sourceStart, sourceEnd: clip.sourceStart + localT,
-      time: clip.time, volume: clip.volume, muted: clip.muted,
-      fadeIn: clip.fadeIn, fadeOut: 0,
+      id: uid('vc'), bufferId: foundClip.bufferId,
+      sourceStart: foundClip.sourceStart, sourceEnd: foundClip.sourceStart + localT,
+      time: foundClip.time, volume: foundClip.volume, muted: foundClip.muted,
+      fadeIn: foundClip.fadeIn, fadeOut: 0,
     };
     const right = {
-      id: uid('vc'), bufferId: clip.bufferId,
-      sourceStart: clip.sourceStart + localT, sourceEnd: clip.sourceEnd,
-      time: clip.time + localT, volume: clip.volume, muted: clip.muted,
-      fadeIn: 0, fadeOut: clip.fadeOut,
+      id: uid('vc'), bufferId: foundClip.bufferId,
+      sourceStart: foundClip.sourceStart + localT, sourceEnd: foundClip.sourceEnd,
+      time: foundClip.time + localT, volume: foundClip.volume, muted: foundClip.muted,
+      fadeIn: 0, fadeOut: foundClip.fadeOut,
     };
-    state.take.voiceClips.splice(idx, 1, left, right);
+    foundTrack.clips.splice(idx, 1, left, right);
     didSomething = true;
   }
   return didSomething;
@@ -1819,6 +2217,8 @@ function splitAtTimes(times) {
 document.getElementById('btnSplitHere').addEventListener('click', splitAtPlayhead);
 document.getElementById('btnUndo').addEventListener('click', undo);
 document.getElementById('btnRedo').addEventListener('click', redo);
+document.getElementById('btnAddVoiceTrack').addEventListener('click', () => addNewTrack('voice'));
+document.getElementById('btnAddEventsTrack').addEventListener('click', () => addNewTrack('events'));
 
 // ===================== Lecture preview =====================
 function playMix() {
@@ -1827,23 +2227,27 @@ function playMix() {
   state.playback.startCtxTime = state.audioCtx.currentTime;
   const startAt = state.playback.startAtTime || 0;
 
-  // Voix : on programme chaque clip individuellement
-  for (const clip of state.take.voiceClips) {
-    if (clip.muted) continue;
-    const clipDur = clip.sourceEnd - clip.sourceStart;
-    const clipEnd = clip.time + clipDur;
-    if (clipEnd <= startAt) continue;
-    scheduleClipPlayback(clip, startAt, state.micGain.gain.value);
-  }
-
-  // Bruitages
-  for (const ev of state.take.events) {
-    if (ev.muted) continue;
-    const buf = state.padBuffers.get(ev.padId);
-    if (!buf) continue;
-    const evEnd = ev.time + ev.duration;
-    if (evEnd <= startAt) continue;
-    scheduleEventPlayback(ev, buf, startAt, state.padsGain.gain.value);
+  for (const track of state.take.tracks) {
+    if (!trackIsAudible(track)) continue;
+    const trackVol = track.volume ?? 1;
+    if (track.type === 'voice') {
+      for (const clip of track.clips) {
+        if (clip.muted) continue;
+        const clipDur = clip.sourceEnd - clip.sourceStart;
+        const clipEnd = clip.time + clipDur;
+        if (clipEnd <= startAt) continue;
+        scheduleClipPlayback(clip, startAt, trackVol);
+      }
+    } else if (track.type === 'events') {
+      for (const ev of track.events) {
+        if (ev.muted) continue;
+        const buf = state.padBuffers.get(ev.padId);
+        if (!buf) continue;
+        const evEnd = ev.time + ev.duration;
+        if (evEnd <= startAt) continue;
+        scheduleEventPlayback(ev, buf, startAt, trackVol);
+      }
+    }
   }
 
   document.getElementById('btnPlayMix').innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>Pause';
@@ -1939,8 +2343,8 @@ function animatePlayhead() {
       return;
     }
     ph.classList.add('visible');
-    ph.style.left = (t * state.zoomPxPerSec) + 'px';
-    const x = t * state.zoomPxPerSec;
+    ph.style.left = (TRACK_HEAD_W + t * state.zoomPxPerSec) + 'px';
+    const x = TRACK_HEAD_W + t * state.zoomPxPerSec;
     if (x > container.scrollLeft + container.clientWidth - 80) {
       container.scrollLeft = x - container.clientWidth + 80;
     }
@@ -1964,7 +2368,14 @@ document.getElementById('btnDiscardTake').addEventListener('click', () => {
 
 // ===================== Export MP3 =====================
 async function exportMix() {
-  if (!state.take || state.take.voiceClips.length === 0) { showStatus("Rien à exporter.", 'error'); return; }
+  if (!state.take || state.take.tracks.length === 0) { showStatus("Rien à exporter.", 'error'); return; }
+  // Vérifier qu'il y a au moins quelque chose à jouer
+  let hasContent = false;
+  for (const t of state.take.tracks) {
+    if (t.type === 'voice' && t.clips.length > 0) { hasContent = true; break; }
+    if (t.type === 'events' && t.events.length > 0) { hasContent = true; break; }
+  }
+  if (!hasContent) { showStatus("Rien à exporter.", 'error'); return; }
   if (typeof lamejs === 'undefined') { showStatus("Encodeur MP3 non chargé.", 'error'); return; }
 
   showProgress('Préparation du mixage…', 0);
@@ -1973,37 +2384,38 @@ async function exportMix() {
     const duration = state.take.duration + 0.5;
     const offlineCtx = new OfflineAudioContext(2, Math.ceil(duration * sampleRate), sampleRate);
 
-    const micVol = state.micGain.gain.value;
-    const padVol = state.padsGain.gain.value;
-
-    // Voix : chaque clip avec son propre buffer
-    for (const clip of state.take.voiceClips) {
-      if (clip.muted) continue;
-      const clipDur = clip.sourceEnd - clip.sourceStart;
-      if (clipDur <= 0) continue;
-      const buf = getClipBuffer(clip);
-      if (!buf) continue;
-      const src = offlineCtx.createBufferSource();
-      src.buffer = buf;
-      const g = offlineCtx.createGain();
-      const baseVol = micVol * (clip.volume ?? 1);
-      applyFadesGainOffline(g, clip.time, clipDur, clip.fadeIn || 0, clip.fadeOut || 0, baseVol);
-      src.connect(g); g.connect(offlineCtx.destination);
-      src.start(clip.time, clip.sourceStart, clipDur);
-    }
-
-    // Bruitages
-    for (const ev of state.take.events) {
-      if (ev.muted) continue;
-      const buf = state.padBuffers.get(ev.padId);
-      if (!buf) continue;
-      const src = offlineCtx.createBufferSource();
-      src.buffer = buf;
-      const g = offlineCtx.createGain();
-      const baseVol = padVol * (ev.volume ?? 1);
-      applyFadesGainOffline(g, ev.time, ev.duration, ev.fadeIn || 0, ev.fadeOut || 0, baseVol);
-      src.connect(g); g.connect(offlineCtx.destination);
-      src.start(ev.time);
+    for (const track of state.take.tracks) {
+      if (!trackIsAudible(track)) continue;
+      const trackVol = track.volume ?? 1;
+      if (track.type === 'voice') {
+        for (const clip of track.clips) {
+          if (clip.muted) continue;
+          const clipDur = clip.sourceEnd - clip.sourceStart;
+          if (clipDur <= 0) continue;
+          const buf = getClipBuffer(clip);
+          if (!buf) continue;
+          const src = offlineCtx.createBufferSource();
+          src.buffer = buf;
+          const g = offlineCtx.createGain();
+          const baseVol = trackVol * (clip.volume ?? 1);
+          applyFadesGainOffline(g, clip.time, clipDur, clip.fadeIn || 0, clip.fadeOut || 0, baseVol);
+          src.connect(g); g.connect(offlineCtx.destination);
+          src.start(clip.time, clip.sourceStart, clipDur);
+        }
+      } else if (track.type === 'events') {
+        for (const ev of track.events) {
+          if (ev.muted) continue;
+          const buf = state.padBuffers.get(ev.padId);
+          if (!buf) continue;
+          const src = offlineCtx.createBufferSource();
+          src.buffer = buf;
+          const g = offlineCtx.createGain();
+          const baseVol = trackVol * (ev.volume ?? 1);
+          applyFadesGainOffline(g, ev.time, ev.duration, ev.fadeIn || 0, ev.fadeOut || 0, baseVol);
+          src.connect(g); g.connect(offlineCtx.destination);
+          src.start(ev.time);
+        }
+      }
     }
 
     showProgress('Rendu audio…', 10);
@@ -2256,17 +2668,19 @@ async function importAudioAsNewTake(buffer) {
   const bufferId = uid('vb');
   state.take = {
     voiceBuffers: { [bufferId]: buffer },
-    voiceClips: [{
-      id: uid('vc'),
-      bufferId,
-      sourceStart: 0,
-      sourceEnd: buffer.duration,
-      time: 0,
-      volume: 1, muted: false, fadeIn: 0, fadeOut: 0,
-    }],
-    events: [],
+    tracks: [],
     duration: 0,
   };
+  const voiceTrack = makeVoiceTrack();
+  voiceTrack.clips.push({
+    id: uid('vc'), bufferId,
+    sourceStart: 0, sourceEnd: buffer.duration,
+    time: 0,
+    volume: 1, muted: false, fadeIn: 0, fadeOut: 0,
+  });
+  state.take.tracks.push(voiceTrack);
+  state.take.tracks.push(makeEventTrack());
+  state.activeTrackId = voiceTrack.id;
   recomputeDuration();
   resetHistory();
   showEditor();
@@ -2275,25 +2689,28 @@ async function importAudioAsNewTake(buffer) {
 
 async function importAudioAsClip(buffer) {
   if (!state.take) return;
-  // Nouveau buffer ajouté à la collection
   const bufferId = uid('vb');
   state.take.voiceBuffers[bufferId] = buffer;
-  // Position : playhead si défini, sinon à la fin
   const t = (state.playback.startAtTime && state.playback.startAtTime > 0)
     ? state.playback.startAtTime
     : (state.take.duration || 0);
-  state.take.voiceClips.push({
-    id: uid('vc'),
-    bufferId,
-    sourceStart: 0,
-    sourceEnd: buffer.duration,
+  // Ajouter à la piste voix active, sinon la première
+  let track = getActiveTrack('voice');
+  if (!track) {
+    track = makeVoiceTrack();
+    state.take.tracks.push(track);
+  }
+  track.clips.push({
+    id: uid('vc'), bufferId,
+    sourceStart: 0, sourceEnd: buffer.duration,
     time: t,
     volume: 1, muted: false, fadeIn: 0, fadeOut: 0,
   });
+  state.activeTrackId = track.id;
   recomputeDuration();
   pushHistory();
   renderTimeline();
-  showStatus(`Clip importé à ${formatTime(t)} (${formatTime(buffer.duration)})`, 'success');
+  showStatus(`Clip importé dans "${track.name}" à ${formatTime(t)}`, 'success');
 }
 
 async function handleImportedAudioFile(file) {
@@ -2397,10 +2814,18 @@ async function base64ToAudioBuffer(dataUrl) {
 }
 
 async function buildProjectData(name) {
-  if (!state.take || state.take.voiceClips.length === 0) throw new Error('Pas de prise à sauvegarder');
+  if (!state.take || !state.take.tracks || state.take.tracks.length === 0) throw new Error('Pas de prise à sauvegarder');
 
-  // Pads utilisés par les events
-  const usedPadIds = [...new Set(state.take.events.map(e => e.padId))];
+  // Récolter tous les events (pour les pads) et tous les clips voix (pour les buffers)
+  const allEvents = [];
+  const allClips = [];
+  for (const t of state.take.tracks) {
+    if (t.type === 'events') allEvents.push(...t.events);
+    if (t.type === 'voice') allClips.push(...t.clips);
+  }
+
+  // Pads utilisés
+  const usedPadIds = [...new Set(allEvents.map(e => e.padId))];
   const pads = [];
   for (const pid of usedPadIds) {
     const pad = state.pads.find(p => p.id === pid);
@@ -2413,8 +2838,8 @@ async function buildProjectData(name) {
     });
   }
 
-  // Audios voix : tous les buffers utilisés par au moins un clip
-  const usedBufferIds = [...new Set(state.take.voiceClips.map(c => c.bufferId).filter(Boolean))];
+  // Audios voix utilisés
+  const usedBufferIds = [...new Set(allClips.map(c => c.bufferId).filter(Boolean))];
   const voiceBuffers = {};
   for (const bid of usedBufferIds) {
     const buf = state.take.voiceBuffers[bid];
@@ -2428,12 +2853,11 @@ async function buildProjectData(name) {
 
   return {
     format: 'mixo',
-    version: 2,    // bump : format multi-buffers
+    version: 3,    // v3 : tracks multiples
     name: name || 'Projet sans nom',
     createdAt: new Date().toISOString(),
     voiceBuffers,
-    voiceClips: state.take.voiceClips,
-    events: state.take.events,
+    tracks: state.take.tracks,
     duration: state.take.duration,
     pads,
   };
@@ -2463,20 +2887,19 @@ async function loadProjectData(data) {
 
   ensureAudioCtx();
 
-  // Décoder les buffers voix : v2 = voiceBuffers (pluriel), v1 = voice.audio unique
+  // Décoder les buffers voix
   const voiceBuffers = {};
-  let voiceClips = data.voiceClips || [];
+  let legacyVoiceClips = [];
   if (data.voiceBuffers) {
-    // Format v2 : plusieurs buffers
     for (const [bid, info] of Object.entries(data.voiceBuffers)) {
       voiceBuffers[bid] = await base64ToAudioBuffer(info.audio);
     }
   } else if (data.voice && data.voice.audio) {
-    // Format v1 : un seul buffer, on lui attribue un bufferId et on l'attache à tous les clips
+    // Format v1 : un seul buffer
     const bid = uid('vb');
     voiceBuffers[bid] = await base64ToAudioBuffer(data.voice.audio);
-    voiceClips = voiceClips.map(c => ({ ...c, bufferId: bid }));
-  } else {
+    legacyVoiceClips = (data.voiceClips || []).map(c => ({ ...c, bufferId: bid }));
+  } else if (!data.tracks) {
     throw new Error("Aucun audio dans le projet.");
   }
 
@@ -2504,20 +2927,42 @@ async function loadProjectData(data) {
     showStatus(`${padsToCreate.length} pad(s) du projet ajouté(s) à la banque "${state.banks.find(b => b.id === state.currentBankId)?.name}"`, 'info');
   }
 
-  const events = (data.events || []).map(ev => {
-    const mapped = idMap.get(ev.padId);
-    if (mapped) {
-      return { ...ev, padId: mapped.id, padName: mapped.name, color: mapped.color };
-    }
-    return ev;
-  });
+  // Construire les tracks selon la version du format
+  let tracks = [];
+  if (data.tracks && Array.isArray(data.tracks)) {
+    // Format v3 : tracks fournies directement
+    tracks = data.tracks.map(t => {
+      if (t.type === 'events') {
+        return {
+          ...t,
+          events: (t.events || []).map(ev => {
+            const mapped = idMap.get(ev.padId);
+            return mapped ? { ...ev, padId: mapped.id, padName: mapped.name, color: mapped.color } : ev;
+          }),
+        };
+      }
+      return { ...t, clips: t.clips || [] };
+    });
+  } else {
+    // Format v1/v2 : voiceClips + events à plat → on crée 2 tracks
+    const vClips = data.voiceClips ? (legacyVoiceClips.length ? legacyVoiceClips : data.voiceClips) : [];
+    const evList = (data.events || []).map(ev => {
+      const mapped = idMap.get(ev.padId);
+      return mapped ? { ...ev, padId: mapped.id, padName: mapped.name, color: mapped.color } : ev;
+    });
+    const voiceTrack = makeVoiceTrack('Voix');
+    voiceTrack.clips = vClips;
+    const eventsTrack = makeEventTrack('Bruitages');
+    eventsTrack.events = evList;
+    tracks = [voiceTrack, eventsTrack];
+  }
 
   state.take = {
     voiceBuffers,
-    voiceClips,
-    events,
+    tracks,
     duration: data.duration || 0,
   };
+  state.activeTrackId = tracks[0]?.id || null;
   recomputeDuration();
   resetHistory();
   showEditor();
