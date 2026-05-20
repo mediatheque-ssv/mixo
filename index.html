@@ -395,6 +395,10 @@
     <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:14px">
       <input type="checkbox" id="modalLoop"> Lecture en boucle
     </label>
+    <div id="modalBankRow" style="display:none">
+      <label>Déplacer vers la banque</label>
+      <select id="modalBankSelect" style="width:100%"></select>
+    </div>
     <div class="modal-actions">
       <button id="modalCancel">Annuler</button>
       <button id="modalOk" class="primary">Valider</button>
@@ -842,6 +846,11 @@ function pickMimeType() {
 
 async function startRecording() {
   if (!state.audioCtx) { showStatus('Sélectionne un micro d\'abord.', 'error'); return; }
+  // Si un projet est en cours (éditeur ouvert), confirmer avant de l'écraser
+  if (state.take && !document.getElementById('editorPanel').classList.contains('hidden')) {
+    if (!(await confirmDiscardDraft('démarres un nouvel enregistrement'))) return;
+    hideEditor();
+  }
   await state.audioCtx.resume();
   // Init take avec les 2 pistes par défaut (vides pour l'instant)
   state.take = { voiceBuffers: {}, tracks: [], duration: 0 };
@@ -942,7 +951,7 @@ async function onRecordingStop() {
     }
     recomputeDuration();
     resetHistory();
-    showEditor();
+    await showEditor();
     showStatus('Prise terminée. Édite la timeline ou exporte directement.', 'success');
   }, 200);
 }
@@ -986,15 +995,29 @@ async function loadBanks() {
   renderBankSelect();
   await loadPadsForBank(state.currentBankId);
 }
+function isProjectBank(bank) {
+  return bank.name && bank.name.startsWith('📂 ');
+}
+
 function renderBankSelect() {
   const sel = document.getElementById('bankSelect');
   sel.innerHTML = '';
-  state.banks.forEach(b => {
-    const opt = document.createElement('option');
-    opt.value = b.id; opt.textContent = b.name;
-    if (b.id === state.currentBankId) opt.selected = true;
-    sel.appendChild(opt);
-  });
+  const library = state.banks.filter(b => !isProjectBank(b));
+  const projects = state.banks.filter(b => isProjectBank(b));
+  const appendGroup = (label, banks) => {
+    if (banks.length === 0) return;
+    const group = document.createElement('optgroup');
+    group.label = label;
+    banks.forEach(b => {
+      const opt = document.createElement('option');
+      opt.value = b.id; opt.textContent = b.name;
+      if (b.id === state.currentBankId) opt.selected = true;
+      group.appendChild(opt);
+    });
+    sel.appendChild(group);
+  };
+  appendGroup('Bibliothèque', library);
+  appendGroup('Projets', projects);
 }
 async function switchBank(bankId) {
   state.activeSources.forEach(a => { try { a.source.stop(); } catch(e){} });
@@ -1332,8 +1355,25 @@ async function deletePad(id) {
 }
 
 // ===================== ÉDITEUR =====================
-function showEditor() {
+const DRAFT_PROJECT_BANK_NAME = '📂 Projet en cours';
+
+async function ensureDraftProjectBank() {
+  // Si on a déjà projectBankId (cas projet ouvert), on ne touche à rien
+  if (state.projectBankId && state.banks.find(b => b.id === state.projectBankId)) return;
+  // Chercher une banque "Projet en cours" existante
+  let bank = state.banks.find(b => b.name === DRAFT_PROJECT_BANK_NAME);
+  if (!bank) {
+    bank = { id: uid('b'), name: DRAFT_PROJECT_BANK_NAME };
+    await dbPut(STORE_BANKS, bank);
+    state.banks.push(bank);
+    renderBankSelect();
+  }
+  state.projectBankId = bank.id;
+}
+
+async function showEditor() {
   document.getElementById('editorPanel').classList.remove('hidden');
+  await ensureDraftProjectBank();
   setTimeout(() => {
     const w = document.getElementById('timelineContainer').clientWidth - TRACK_HEAD_W - 30;
     state.zoomPxPerSec = Math.max(20, w / Math.max(state.take.duration, 5));
@@ -2436,10 +2476,49 @@ document.getElementById('btnStopMix').addEventListener('click', () => {
   state.playback.startAtTime = 0;
   document.getElementById('playhead').classList.remove('visible');
 });
-document.getElementById('btnDiscardTake').addEventListener('click', () => {
-  if (!confirm('Abandonner cette prise ?')) return;
+document.getElementById('btnDiscardTake').addEventListener('click', async () => {
+  if (!(await confirmDiscardDraft('abandonnes cette prise'))) return;
   hideEditor();
 });
+
+async function cleanupDraftProjectBank() {
+  const draftBank = state.banks.find(b => b.name === DRAFT_PROJECT_BANK_NAME);
+  if (!draftBank) return;
+  // Supprimer tous les pads de cette banque
+  const allDbPads = await dbGetAll(STORE_PADS);
+  const padsToDelete = allDbPads.filter(p => p.bankId === draftBank.id);
+  for (const p of padsToDelete) {
+    await dbDelete(STORE_PADS, p.id);
+    state.padBuffers.delete(p.id);
+  }
+  // Supprimer la banque
+  await dbDelete(STORE_BANKS, draftBank.id);
+  state.banks = state.banks.filter(b => b.id !== draftBank.id);
+  // Si on était sur cette banque, basculer sur la première dispo
+  if (state.currentBankId === draftBank.id) {
+    const fallback = state.banks[0];
+    if (fallback) await switchBank(fallback.id);
+  }
+  renderBankSelect();
+}
+
+// Demande confirmation à l'utilisateur si la banque "Projet en cours" contient des pads
+// non sauvegardés, et fait le cleanup si confirmé. Retourne true si on peut continuer.
+async function confirmDiscardDraft(actionLabel) {
+  const draftBank = state.banks.find(b => b.name === DRAFT_PROJECT_BANK_NAME);
+  if (!draftBank) return true;
+  const allDbPads = await dbGetAll(STORE_PADS);
+  const padsInDraft = allDbPads.filter(p => p.bankId === draftBank.id).length;
+  if (padsInDraft === 0) {
+    // Rien à perdre, on supprime silencieusement la banque vide
+    await cleanupDraftProjectBank();
+    return true;
+  }
+  const msg = `La banque "${DRAFT_PROJECT_BANK_NAME}" contient ${padsInDraft} pad(s) non sauvegardé(s).\n\nSi tu ${actionLabel}, cette banque temporaire et ses pads seront supprimés. Pour les conserver :\n— sauvegarde le projet (les pads partiront avec)\n— ou déplace les pads importants vers une banque permanente (✎ sur le pad).\n\nContinuer ?`;
+  if (!confirm(msg)) return false;
+  await cleanupDraftProjectBank();
+  return true;
+}
 
 // ===================== Export MP3 =====================
 async function exportMix() {
@@ -2635,10 +2714,10 @@ function openPadModal(editId) {
   const isEdit = !!editId;
   document.getElementById('modalTitle').textContent = isEdit ? 'Modifier le pad' : 'Ajouter un son';
   document.getElementById('modalOk').textContent = isEdit ? 'Enregistrer' : 'Ajouter';
-  let name = '', color = PAD_COLORS[state.pads.length % PAD_COLORS.length], loop = false;
+  let name = '', color = PAD_COLORS[state.pads.length % PAD_COLORS.length], loop = false, currentBankId = state.currentBankId;
   if (isEdit) {
     const pad = state.pads.find(p => p.id === editId);
-    if (pad) { name = pad.name; color = pad.color; loop = pad.loop; }
+    if (pad) { name = pad.name; color = pad.color; loop = pad.loop; currentBankId = pad.bankId; }
   } else if (state.pendingFile) {
     name = state.pendingFile.name.replace(/\.[^/.]+$/, '');
   }
@@ -2646,6 +2725,31 @@ function openPadModal(editId) {
   document.getElementById('modalLoop').checked = loop;
   state.selectedColor = color;
   renderColorPicker();
+  // Sélecteur de banque : visible uniquement en édition
+  const bankRow = document.getElementById('modalBankRow');
+  if (isEdit) {
+    bankRow.style.display = 'block';
+    const bankSel = document.getElementById('modalBankSelect');
+    bankSel.innerHTML = '';
+    const library = state.banks.filter(b => !isProjectBank(b));
+    const projects = state.banks.filter(b => isProjectBank(b));
+    const appendOptGroup = (label, banks) => {
+      if (banks.length === 0) return;
+      const g = document.createElement('optgroup');
+      g.label = label;
+      banks.forEach(b => {
+        const opt = document.createElement('option');
+        opt.value = b.id; opt.textContent = b.name;
+        if (b.id === currentBankId) opt.selected = true;
+        g.appendChild(opt);
+      });
+      bankSel.appendChild(g);
+    };
+    appendOptGroup('Bibliothèque', library);
+    appendOptGroup('Projets', projects);
+  } else {
+    bankRow.style.display = 'none';
+  }
   document.getElementById('modal').classList.add('visible');
   setTimeout(() => { document.getElementById('modalName').focus(); document.getElementById('modalName').select(); }, 50);
 }
@@ -2665,7 +2769,23 @@ document.getElementById('modalOk').addEventListener('click', async () => {
   const name = document.getElementById('modalName').value.trim() || 'Sans titre';
   const loop = document.getElementById('modalLoop').checked;
   const color = state.selectedColor;
-  if (state.editingPadId) await updatePad(state.editingPadId, { name, loop, color });
+  if (state.editingPadId) {
+    const changes = { name, loop, color };
+    // Si déplacement de banque demandé
+    const newBankId = document.getElementById('modalBankSelect').value;
+    const pad = state.pads.find(p => p.id === state.editingPadId);
+    if (pad && newBankId && newBankId !== pad.bankId) {
+      changes.bankId = newBankId;
+    }
+    await updatePad(state.editingPadId, changes);
+    // Si on a déplacé le pad hors de la banque courante, le retirer de state.pads (sinon il reste visible)
+    if (changes.bankId && changes.bankId !== state.currentBankId) {
+      state.pads = state.pads.filter(p => p.id !== state.editingPadId);
+      renderPads();
+      const targetBank = state.banks.find(b => b.id === changes.bankId);
+      showStatus(`Pad déplacé vers "${targetBank?.name || 'autre banque'}"`, 'info');
+    }
+  }
   else if (state.pendingFile) await addPad(state.pendingFile, name, color, loop);
   document.getElementById('modal').classList.remove('visible');
   state.pendingFile = null; state.editingPadId = null;
@@ -2758,7 +2878,7 @@ async function importAudioAsNewTake(buffer) {
   state.activeTrackId = voiceTrack.id;
   recomputeDuration();
   resetHistory();
-  showEditor();
+  await showEditor();
   showStatus(`Audio importé (${formatTime(buffer.duration)})`, 'success');
 }
 
@@ -2815,10 +2935,10 @@ document.getElementById('audioImportInput').addEventListener('change', async e =
 });
 document.getElementById('importReplace').addEventListener('click', async () => {
   document.getElementById('importModal').classList.remove('visible');
-  if (pendingImportFile) {
-    await importAudioAsNewTake(pendingImportFile);
-    pendingImportFile = null;
-  }
+  if (!pendingImportFile) return;
+  if (!(await confirmDiscardDraft('remplaces la prise actuelle'))) { pendingImportFile = null; return; }
+  await importAudioAsNewTake(pendingImportFile);
+  pendingImportFile = null;
 });
 document.getElementById('importAdd').addEventListener('click', async () => {
   document.getElementById('importModal').classList.remove('visible');
@@ -2890,7 +3010,7 @@ async function base64ToAudioBuffer(dataUrl) {
 async function buildProjectData(name) {
   if (!state.take || !state.take.tracks || state.take.tracks.length === 0) throw new Error('Pas de prise à sauvegarder');
 
-  // Récolter tous les events (pour les pads) et tous les clips voix (pour les buffers)
+  // Récolter tous les events et clips voix
   const allEvents = [];
   const allClips = [];
   for (const t of state.take.tracks) {
@@ -2898,13 +3018,36 @@ async function buildProjectData(name) {
     if (t.type === 'voice') allClips.push(...t.clips);
   }
 
-  // Pads utilisés
-  const usedPadIds = [...new Set(allEvents.map(e => e.padId))];
+  // Récolter les pads à embarquer :
+  // 1. tous les pads de la banque du projet (state.projectBankId), même non utilisés sur la timeline
+  // 2. tous les pads référencés par des events, même si dans une autre banque
+  const allDbPads = await dbGetAll(STORE_PADS);
+  const padsToEmbed = new Map();
+  if (state.projectBankId) {
+    for (const p of allDbPads.filter(p => p.bankId === state.projectBankId)) {
+      padsToEmbed.set(p.id, p);
+    }
+  }
+  for (const ev of allEvents) {
+    if (!padsToEmbed.has(ev.padId)) {
+      const p = allDbPads.find(p => p.id === ev.padId);
+      if (p) padsToEmbed.set(ev.padId, p);
+    }
+  }
+
+  // Encoder chaque pad embarqué
   const pads = [];
-  for (const pid of usedPadIds) {
-    const pad = state.pads.find(p => p.id === pid);
-    const buf = state.padBuffers.get(pid);
-    if (!pad || !buf) continue;
+  for (const pad of padsToEmbed.values()) {
+    // Récupérer le buffer (en mémoire si possible, sinon depuis le blob)
+    let buf = state.padBuffers.get(pad.id);
+    if (!buf && pad.blob) {
+      try {
+        const ab = await pad.blob.arrayBuffer();
+        buf = await state.audioCtx.decodeAudioData(ab.slice(0));
+        state.padBuffers.set(pad.id, buf);
+      } catch (e) { console.warn('Decode failed for pad', pad.name, e); continue; }
+    }
+    if (!buf) continue;
     const dataUrl = await audioBufferToBase64Wav(buf);
     pads.push({
       id: pad.id, name: pad.name, color: pad.color, loop: pad.loop, duration: pad.duration,
@@ -2938,12 +3081,39 @@ async function buildProjectData(name) {
 }
 
 async function ensureProjectBank(name) {
-  // Crée (ou réutilise) la banque dédiée au projet, et la définit comme projectBankId
-  if (state.projectBankId && state.banks.find(b => b.id === state.projectBankId)) return;
-  const projectBankName = `📂 ${name}`;
-  let projectBank = state.banks.find(b => b.name === projectBankName);
+  const targetName = `📂 ${name}`;
+  // Si on a déjà une projectBankId (cas projet ouvert OU banque "Projet en cours" déjà créée)
+  if (state.projectBankId) {
+    const existing = state.banks.find(b => b.id === state.projectBankId);
+    if (existing) {
+      // Si le nom diffère, on renomme (cas "Projet en cours" → nom du projet, ou nouveau nom de projet)
+      if (existing.name !== targetName) {
+        // Vérifier qu'aucune autre banque n'a déjà ce nom
+        const conflict = state.banks.find(b => b.id !== existing.id && b.name === targetName);
+        if (conflict) {
+          // Conflit : on fusionne en migrant les pads de notre banque vers celle qui existe déjà
+          const ourPads = await dbGetAll(STORE_PADS);
+          for (const p of ourPads.filter(p => p.bankId === existing.id)) {
+            p.bankId = conflict.id;
+            await dbPut(STORE_PADS, p);
+          }
+          await dbDelete(STORE_BANKS, existing.id);
+          state.banks = state.banks.filter(b => b.id !== existing.id);
+          state.projectBankId = conflict.id;
+          if (state.currentBankId === existing.id) await switchBank(conflict.id);
+        } else {
+          existing.name = targetName;
+          await dbPut(STORE_BANKS, existing);
+        }
+        renderBankSelect();
+      }
+      return;
+    }
+  }
+  // Pas de banque projet : en créer une (cas anciens projets sans flux normal)
+  let projectBank = state.banks.find(b => b.name === targetName);
   if (!projectBank) {
-    projectBank = { id: uid('b'), name: projectBankName };
+    projectBank = { id: uid('b'), name: targetName };
     await dbPut(STORE_BANKS, projectBank);
     state.banks.push(projectBank);
     renderBankSelect();
@@ -3048,7 +3218,6 @@ async function loadProjectData(data) {
       }
     }
   }
-  console.log(`[loadProjectData] Pads : ${padsToCreate.length} dans le projet, ${reused} réutilisés, ${created} créés`);
 
   // 4. Basculer sur la banque dédiée au projet pour que l'utilisateur voie ses pads
   await switchBank(projectBank.id);
@@ -3099,12 +3268,15 @@ async function loadProjectData(data) {
   state.activeTrackId = tracks[0]?.id || null;
   recomputeDuration();
   resetHistory();
-  showEditor();
+  await showEditor();
   showStatus(`Projet "${data.name}" ouvert`, 'success');
 }
 
 async function loadProjectFromFile(file) {
   try {
+    if (state.take && !document.getElementById('editorPanel').classList.contains('hidden')) {
+      if (!(await confirmDiscardDraft('ouvres un autre projet'))) return;
+    }
     const text = await file.text();
     const data = JSON.parse(text);
     await loadProjectData(data);
@@ -3187,6 +3359,10 @@ async function renderProjectsList() {
   }
 }
 async function openProjectFromDB(id) {
+  // Confirmer si projet en cours d'édition avec banque temporaire non sauvegardée
+  if (state.take && !document.getElementById('editorPanel').classList.contains('hidden')) {
+    if (!(await confirmDiscardDraft('ouvres un autre projet'))) return;
+  }
   const tx = state.db.transaction(STORE_PROJECTS, 'readonly');
   const req = tx.objectStore(STORE_PROJECTS).get(id);
   req.onsuccess = async () => {
