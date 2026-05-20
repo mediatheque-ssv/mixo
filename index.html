@@ -486,11 +486,11 @@ const state = {
   // Prise courante
   take: null,
   /* take = {
-      voiceBuffer: AudioBuffer,        // matériel source unique
-      voiceClips: [                     // les segments effectivement présents sur la timeline
-        { id, sourceStart, sourceEnd, time, volume, muted, fadeIn, fadeOut }
+      voiceBuffers: { bufferId: AudioBuffer, ... },  // plusieurs sources audio possibles
+      voiceClips: [                                   // segments présents sur la timeline
+        { id, bufferId, sourceStart, sourceEnd, time, volume, muted, fadeIn, fadeOut }
       ],
-      events: [                         // bruitages
+      events: [                                       // bruitages
         { id, padId, padName, color, time, duration, volume, muted, fadeIn, fadeOut }
       ],
       duration: number
@@ -712,7 +712,7 @@ function pickMimeType() {
 async function startRecording() {
   if (!state.audioCtx) { showStatus('Sélectionne un micro d\'abord.', 'error'); return; }
   await state.audioCtx.resume();
-  state.take = { voiceBuffer: null, voiceClips: [], events: [], duration: 0 };
+  state.take = { voiceBuffers: {}, voiceClips: [], events: [], duration: 0 };
   const mime = pickMimeType();
   state.micChunks = [];
   try {
@@ -791,17 +791,15 @@ async function onRecordingStop() {
       showStatus('Erreur lors du décodage de la voix : ' + e.message, 'error');
       return;
     }
-    state.take.voiceBuffer = voiceBuffer;
-    // Au démarrage, un seul clip qui couvre toute la voix
+    const bufferId = uid('vb');
+    state.take.voiceBuffers = { [bufferId]: voiceBuffer };
     state.take.voiceClips = [{
       id: uid('vc'),
+      bufferId,
       sourceStart: 0,
       sourceEnd: voiceBuffer.duration,
       time: 0,
-      volume: 1,
-      muted: false,
-      fadeIn: 0,
-      fadeOut: 0,
+      volume: 1, muted: false, fadeIn: 0, fadeOut: 0,
     }];
     recomputeDuration();
     resetHistory();
@@ -815,6 +813,12 @@ function recomputeDuration() {
   const voiceEnd = Math.max(0, ...state.take.voiceClips.map(c => c.time + (c.sourceEnd - c.sourceStart)));
   const evEnd = Math.max(0, ...state.take.events.map(e => e.time + e.duration));
   state.take.duration = Math.max(voiceEnd, evEnd, 1);
+}
+
+// Récupère l'AudioBuffer source d'un clip voix
+function getClipBuffer(clip) {
+  if (!state.take || !clip) return null;
+  return state.take.voiceBuffers[clip.bufferId] || null;
 }
 
 // ===================== Banques / Pads =====================
@@ -1076,7 +1080,7 @@ function triggerPad(id) {
   if (!pad || !buf) return;
   if (state.isRecording && !state.isPaused) {
     const t = state.audioCtx.currentTime - state.recStartCtxTime - state.pausedDuration;
-    if (!state.take) state.take = { voiceBuffer: null, voiceClips: [], events: [], duration: 0 };
+    if (!state.take) state.take = { voiceBuffers: {}, voiceClips: [], events: [], duration: 0 };
     state.take.events.push({
       id: uid('e'),
       padId: pad.id, padName: pad.name, color: pad.color,
@@ -1196,7 +1200,7 @@ function renderRuler(w) {
 function renderVoiceClips() {
   const layer = document.getElementById('voiceClipsLayer');
   layer.innerHTML = '';
-  if (!state.take || !state.take.voiceBuffer) return;
+  if (!state.take || state.take.voiceClips.length === 0) return;
   state.take.voiceClips.forEach(clip => {
     const dur = clip.sourceEnd - clip.sourceStart;
     if (dur <= 0) return;
@@ -1222,12 +1226,11 @@ function renderVoiceClips() {
 }
 
 function drawClipWaveform(canvas, clip) {
-  const buf = state.take.voiceBuffer;
+  const buf = getClipBuffer(clip);
   if (!canvas || !buf) return;
   const dur = clip.sourceEnd - clip.sourceStart;
   const widthPx = Math.max(1, dur * state.zoomPxPerSec);
   const dpr = window.devicePixelRatio || 1;
-  // Le canvas occupe la zone sous le handle (handle = 18px)
   const canvasHeight = VOICE_TRACK_HEIGHT - 18;
   canvas.style.width = widthPx + 'px';
   canvas.style.height = canvasHeight + 'px';
@@ -1654,7 +1657,9 @@ async function applySelectionAction(action) {
   const srcSelEnd = targetClip.sourceStart + localEnd;
 
   if (action === 'copy' || action === 'cut') {
-    const padBuffer = extractAudioBuffer(state.take.voiceBuffer, srcSelStart, srcSelEnd);
+    const sourceBuf = getClipBuffer(targetClip);
+    if (!sourceBuf) { showStatus("Buffer audio introuvable.", 'error'); return; }
+    const padBuffer = extractAudioBuffer(sourceBuf, srcSelStart, srcSelEnd);
     const name = `Extrait — ${formatTime(sel.start)}`;
     const pad = await addPadFromAudioBuffer(padBuffer, name, '#3b82f6');
     if (pad) showStatus(`Pad "${pad.name}" créé`, 'success');
@@ -1697,28 +1702,25 @@ function splitClipForMute(clip, localStart, localEnd) {
 
   const idx = state.take.voiceClips.indexOf(clip);
   const newClips = [];
-  // Partie avant (si non vide)
   if (localStart > 0.001) {
     newClips.push({
-      id: uid('vc'),
+      id: uid('vc'), bufferId: clip.bufferId,
       sourceStart: clip.sourceStart,
       sourceEnd: clip.sourceStart + localStart,
       time: clip.time,
       volume: clip.volume, muted: clip.muted, fadeIn: clip.fadeIn, fadeOut: 0,
     });
   }
-  // Partie sélectionnée (muette)
   newClips.push({
-    id: uid('vc'),
+    id: uid('vc'), bufferId: clip.bufferId,
     sourceStart: clip.sourceStart + localStart,
     sourceEnd: clip.sourceStart + localEnd,
     time: clip.time + localStart,
     volume: clip.volume, muted: true, fadeIn: 0, fadeOut: 0,
   });
-  // Partie après (si non vide)
   if (clipDur - localEnd > 0.001) {
     newClips.push({
-      id: uid('vc'),
+      id: uid('vc'), bufferId: clip.bufferId,
       sourceStart: clip.sourceStart + localEnd,
       sourceEnd: clip.sourceEnd,
       time: clip.time + localEnd,
@@ -1738,7 +1740,7 @@ function removeRangeFromClip(clip, localStart, localEnd) {
   const newClips = [];
   if (localStart > 0.001) {
     newClips.push({
-      id: uid('vc'),
+      id: uid('vc'), bufferId: clip.bufferId,
       sourceStart: clip.sourceStart,
       sourceEnd: clip.sourceStart + localStart,
       time: clip.time,
@@ -1749,7 +1751,7 @@ function removeRangeFromClip(clip, localStart, localEnd) {
   // (les autres clips et events ne sont PAS décalés — choix discuté).
   if (clipDur - localEnd > 0.001) {
     newClips.push({
-      id: uid('vc'),
+      id: uid('vc'), bufferId: clip.bufferId,
       sourceStart: clip.sourceStart + localEnd,
       sourceEnd: clip.sourceEnd,
       time: clip.time + localEnd,
@@ -1798,13 +1800,13 @@ function splitAtTimes(times) {
     const localT = t - clip.time;
     const idx = state.take.voiceClips.indexOf(clip);
     const left = {
-      id: uid('vc'),
+      id: uid('vc'), bufferId: clip.bufferId,
       sourceStart: clip.sourceStart, sourceEnd: clip.sourceStart + localT,
       time: clip.time, volume: clip.volume, muted: clip.muted,
       fadeIn: clip.fadeIn, fadeOut: 0,
     };
     const right = {
-      id: uid('vc'),
+      id: uid('vc'), bufferId: clip.bufferId,
       sourceStart: clip.sourceStart + localT, sourceEnd: clip.sourceEnd,
       time: clip.time + localT, volume: clip.volume, muted: clip.muted,
       fadeIn: 0, fadeOut: clip.fadeOut,
@@ -1851,7 +1853,7 @@ function playMix() {
 
 function scheduleClipPlayback(clip, startAt, channelVol) {
   const ctx = state.audioCtx;
-  const buf = state.take.voiceBuffer;
+  const buf = getClipBuffer(clip);
   if (!buf) return;
   const src = ctx.createBufferSource();
   src.buffer = buf;
@@ -1962,7 +1964,7 @@ document.getElementById('btnDiscardTake').addEventListener('click', () => {
 
 // ===================== Export MP3 =====================
 async function exportMix() {
-  if (!state.take || !state.take.voiceBuffer) return;
+  if (!state.take || state.take.voiceClips.length === 0) { showStatus("Rien à exporter.", 'error'); return; }
   if (typeof lamejs === 'undefined') { showStatus("Encodeur MP3 non chargé.", 'error'); return; }
 
   showProgress('Préparation du mixage…', 0);
@@ -1974,13 +1976,15 @@ async function exportMix() {
     const micVol = state.micGain.gain.value;
     const padVol = state.padsGain.gain.value;
 
-    // Voix : chaque clip
+    // Voix : chaque clip avec son propre buffer
     for (const clip of state.take.voiceClips) {
       if (clip.muted) continue;
       const clipDur = clip.sourceEnd - clip.sourceStart;
       if (clipDur <= 0) continue;
+      const buf = getClipBuffer(clip);
+      if (!buf) continue;
       const src = offlineCtx.createBufferSource();
-      src.buffer = state.take.voiceBuffer;
+      src.buffer = buf;
       const g = offlineCtx.createGain();
       const baseVol = micVol * (clip.volume ?? 1);
       applyFadesGainOffline(g, clip.time, clipDur, clip.fadeIn || 0, clip.fadeOut || 0, baseVol);
@@ -2249,10 +2253,12 @@ async function decodeAudioFile(file) {
 }
 
 async function importAudioAsNewTake(buffer) {
+  const bufferId = uid('vb');
   state.take = {
-    voiceBuffer: buffer,
+    voiceBuffers: { [bufferId]: buffer },
     voiceClips: [{
       id: uid('vc'),
+      bufferId,
       sourceStart: 0,
       sourceEnd: buffer.duration,
       time: 0,
@@ -2268,21 +2274,17 @@ async function importAudioAsNewTake(buffer) {
 }
 
 async function importAudioAsClip(buffer) {
-  // Ajouter comme clip voix au temps du playhead (ou à la fin si pas de playhead)
   if (!state.take) return;
-  // Si la prise courante n'a pas de voiceBuffer (cas théorique), on l'attache directement
-  // Sinon, on a un souci : un seul voiceBuffer par take dans notre modèle actuel.
-  // Solution simple : on remplace si vide, sinon on prévient.
-  // Pour bien faire : on devrait gérer plusieurs voiceBuffers. Pour l'instant, on traite ça :
-  // si la prise a déjà un voiceBuffer différent, on confirme le remplacement.
-  if (state.take.voiceBuffer && state.take.voiceBuffer !== buffer) {
-    if (!confirm("Cette prise contient déjà un audio source. Le remplacer par celui-ci ?\n(Une seule source audio par prise dans cette version. Les clips existants seront refaits à partir du nouveau buffer.)")) return;
-  }
-  state.take.voiceBuffer = buffer;
-  // Ajouter un nouveau clip au playhead (ou à la fin)
-  const t = state.playback.startAtTime || state.take.duration || 0;
+  // Nouveau buffer ajouté à la collection
+  const bufferId = uid('vb');
+  state.take.voiceBuffers[bufferId] = buffer;
+  // Position : playhead si défini, sinon à la fin
+  const t = (state.playback.startAtTime && state.playback.startAtTime > 0)
+    ? state.playback.startAtTime
+    : (state.take.duration || 0);
   state.take.voiceClips.push({
     id: uid('vc'),
+    bufferId,
     sourceStart: 0,
     sourceEnd: buffer.duration,
     time: t,
@@ -2291,7 +2293,7 @@ async function importAudioAsClip(buffer) {
   recomputeDuration();
   pushHistory();
   renderTimeline();
-  showStatus(`Clip ajouté à ${formatTime(t)}`, 'success');
+  showStatus(`Clip importé à ${formatTime(t)} (${formatTime(buffer.duration)})`, 'success');
 }
 
 async function handleImportedAudioFile(file) {
@@ -2395,7 +2397,7 @@ async function base64ToAudioBuffer(dataUrl) {
 }
 
 async function buildProjectData(name) {
-  if (!state.take || !state.take.voiceBuffer) throw new Error('Pas de prise à sauvegarder');
+  if (!state.take || state.take.voiceClips.length === 0) throw new Error('Pas de prise à sauvegarder');
 
   // Pads utilisés par les events
   const usedPadIds = [...new Set(state.take.events.map(e => e.padId))];
@@ -2411,19 +2413,25 @@ async function buildProjectData(name) {
     });
   }
 
-  // Audio voix
-  const voiceAudio = await audioBufferToBase64Wav(state.take.voiceBuffer);
+  // Audios voix : tous les buffers utilisés par au moins un clip
+  const usedBufferIds = [...new Set(state.take.voiceClips.map(c => c.bufferId).filter(Boolean))];
+  const voiceBuffers = {};
+  for (const bid of usedBufferIds) {
+    const buf = state.take.voiceBuffers[bid];
+    if (!buf) continue;
+    voiceBuffers[bid] = {
+      audio: await audioBufferToBase64Wav(buf),
+      sampleRate: buf.sampleRate,
+      duration: buf.duration,
+    };
+  }
 
   return {
     format: 'mixo',
-    version: PROJECT_FORMAT_VERSION,
+    version: 2,    // bump : format multi-buffers
     name: name || 'Projet sans nom',
     createdAt: new Date().toISOString(),
-    voice: {
-      audio: voiceAudio,
-      sampleRate: state.take.voiceBuffer.sampleRate,
-      duration: state.take.voiceBuffer.duration,
-    },
+    voiceBuffers,
     voiceClips: state.take.voiceClips,
     events: state.take.events,
     duration: state.take.duration,
@@ -2455,11 +2463,24 @@ async function loadProjectData(data) {
 
   ensureAudioCtx();
 
-  // Charger la voix
-  const voiceBuffer = await base64ToAudioBuffer(data.voice.audio);
+  // Décoder les buffers voix : v2 = voiceBuffers (pluriel), v1 = voice.audio unique
+  const voiceBuffers = {};
+  let voiceClips = data.voiceClips || [];
+  if (data.voiceBuffers) {
+    // Format v2 : plusieurs buffers
+    for (const [bid, info] of Object.entries(data.voiceBuffers)) {
+      voiceBuffers[bid] = await base64ToAudioBuffer(info.audio);
+    }
+  } else if (data.voice && data.voice.audio) {
+    // Format v1 : un seul buffer, on lui attribue un bufferId et on l'attache à tous les clips
+    const bid = uid('vb');
+    voiceBuffers[bid] = await base64ToAudioBuffer(data.voice.audio);
+    voiceClips = voiceClips.map(c => ({ ...c, bufferId: bid }));
+  } else {
+    throw new Error("Aucun audio dans le projet.");
+  }
 
-  // Recréer les pads dans la banque courante avec de nouveaux IDs pour éviter toute collision.
-  // On mappe ancien_id → nouveau_pad pour ensuite mettre à jour les events.
+  // Recréer les pads dans la banque courante avec de nouveaux IDs
   const padsToCreate = (data.pads || []);
   const idMap = new Map();
   for (let i = 0; i < padsToCreate.length; i++) {
@@ -2483,7 +2504,6 @@ async function loadProjectData(data) {
     showStatus(`${padsToCreate.length} pad(s) du projet ajouté(s) à la banque "${state.banks.find(b => b.id === state.currentBankId)?.name}"`, 'info');
   }
 
-  // Recréer les events en remappant padId si nécessaire
   const events = (data.events || []).map(ev => {
     const mapped = idMap.get(ev.padId);
     if (mapped) {
@@ -2493,8 +2513,8 @@ async function loadProjectData(data) {
   });
 
   state.take = {
-    voiceBuffer,
-    voiceClips: data.voiceClips || [],
+    voiceBuffers,
+    voiceClips,
     events,
     duration: data.duration || 0,
   };
