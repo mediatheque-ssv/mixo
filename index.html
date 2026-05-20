@@ -420,7 +420,9 @@
     <div style="font-size: 13px; line-height: 1.8;">
       <div><kbd>Espace</kbd> &nbsp; Enregistrer / Pause (ou Lecture/Pause dans l'éditeur)</div>
       <div><kbd>Échap</kbd> &nbsp; Stop, ou annuler la sélection</div>
-      <div><kbd>1</kbd>–<kbd>9</kbd>, <kbd>0</kbd> &nbsp; Déclencher les 10 premiers pads</div>
+      <div><kbd>1</kbd>–<kbd>9</kbd>, <kbd>0</kbd> &nbsp; Lire les 10 premiers pads (preview)</div>
+      <div><kbd>Ctrl+clic</kbd> sur un pad &nbsp; Ajouter au playhead dans la piste bruitages active</div>
+      <div><kbd>Ctrl+1</kbd>…<kbd>Ctrl+9</kbd> &nbsp; Lire + ajouter à la timeline</div>
       <div><kbd>S</kbd> &nbsp; Scinder le clip voix au curseur (ou aux bornes d'une sélection)</div>
       <div><kbd>M</kbd> &nbsp; Silencer la sélection</div>
       <div><kbd>Ctrl+X</kbd> &nbsp; Couper la sélection vers un nouveau pad</div>
@@ -462,7 +464,7 @@
     <p style="font-size: 14px; color: #b0b8c5; margin-bottom: 16px;">Une prise est déjà en cours d'édition. Que veux-tu faire avec le fichier audio importé ?</p>
     <div class="modal-actions" style="flex-direction: column; align-items: stretch">
       <button id="importReplace" class="danger" style="justify-content: center">Remplacer la prise actuelle</button>
-      <button id="importAdd" class="primary" style="justify-content: center">Ajouter comme nouveau clip voix</button>
+      <button id="importAdd" class="primary" style="justify-content: center">Ajouter dans une nouvelle piste voix</button>
       <button id="importCancel" style="justify-content: center">Annuler</button>
     </div>
   </div>
@@ -1116,8 +1118,9 @@ function setupPadInteraction(el, pad) {
     document.removeEventListener('mouseup', onUp);
     started = false;
     if (!isDraggingTimeline) {
-      // C'était un simple click → trigger
-      triggerPad(pad.id);
+      // C'était un simple click → trigger (lecture). Ctrl/Cmd+clic → ajoute aussi à la timeline.
+      const addToTimeline = !!(e.ctrlKey || e.metaKey);
+      triggerPad(pad.id, { addToTimeline });
     } else {
       el.classList.remove('dragging');
       if (ghostEl) { ghostEl.remove(); ghostEl = null; }
@@ -1233,10 +1236,13 @@ async function updatePad(id, changes) {
   renderPads();
 }
 
-function triggerPad(id) {
+function triggerPad(id, opts) {
+  opts = opts || {};
   const pad = state.pads.find(p => p.id === id);
   const buf = state.padBuffers.get(id);
   if (!pad || !buf) return;
+
+  // Cas 1 : enregistrement en cours → log dans la piste bruitages active (toujours, peu importe ctrl)
   if (state.isRecording && !state.isPaused) {
     const t = state.audioCtx.currentTime - state.recStartCtxTime - state.pausedDuration;
     if (!state.take) {
@@ -1258,6 +1264,13 @@ function triggerPad(id) {
       volume: 1, muted: false, fadeIn: 0, fadeOut: 0,
     });
   }
+  // Cas 2 : éditeur ouvert + opts.addToTimeline → ajoute au playhead dans la piste bruitages active
+  else if (opts.addToTimeline && state.take && !document.getElementById('editorPanel').classList.contains('hidden')) {
+    const t = state.playback.startAtTime || 0;
+    addPadToTimeline(pad.id, t);
+  }
+
+  // Toggle de lecture du son
   if (state.activeSources.has(id)) {
     const a = state.activeSources.get(id);
     try { a.source.stop(); } catch(e) {}
@@ -1645,20 +1658,16 @@ function setupVoiceClipInteraction(el, clip, track) {
     }
     recomputeDuration();
 
-    // Feedback visuel pour le changement de piste : transform vertical + highlight piste cible
-    const dy = e.clientY - drag.startY;
+    // Feedback visuel pour le changement de piste : highlight piste cible, clip reste en place
     const targetTrackId = detectTrackAtY(e.clientY);
     const targetTrack = targetTrackId ? findTrack(targetTrackId) : null;
-    // Highlight uniquement si piste compatible et différente de l'origine
     document.querySelectorAll('.timeline-track.drop-target').forEach(t => t.classList.remove('drop-target'));
     if (targetTrack && targetTrack.type === 'voice' && targetTrack.id !== drag.originTrackId) {
       const targetEl = document.querySelector(`.timeline-track[data-track-id="${targetTrack.id}"]`);
       if (targetEl) targetEl.classList.add('drop-target');
       el.classList.add('dragging-cross-track');
-      el.style.transform = `translateY(${dy}px)`;
     } else {
       el.classList.remove('dragging-cross-track');
-      el.style.transform = '';
     }
   }
   function onHandleUp(e) {
@@ -1667,7 +1676,6 @@ function setupVoiceClipInteraction(el, clip, track) {
     // Reset feedback visuel
     document.querySelectorAll('.timeline-track.drop-target').forEach(t => t.classList.remove('drop-target'));
     el.classList.remove('dragging-cross-track');
-    el.style.transform = '';
     // Détecter si lâché sur une autre piste voix → déplacement entre pistes
     const targetTrackId = detectTrackAtY(e.clientY);
     const targetTrack = targetTrackId ? findTrack(targetTrackId) : null;
@@ -1872,8 +1880,7 @@ function makeEventDraggable(block, ev, track) {
     block.style.left = (newTime * state.zoomPxPerSec) + 'px';
     recomputeDuration();
 
-    // Feedback visuel cross-track
-    const dy = clientY - startY;
+    // Feedback visuel cross-track : highlight cible, le bloc reste en place dans la piste d'origine
     const targetTrackId = detectTrackAtY(clientY);
     const targetTrack = targetTrackId ? findTrack(targetTrackId) : null;
     document.querySelectorAll('.timeline-track.drop-target').forEach(t => t.classList.remove('drop-target'));
@@ -1881,10 +1888,8 @@ function makeEventDraggable(block, ev, track) {
       const targetEl = document.querySelector(`.timeline-track[data-track-id="${targetTrack.id}"]`);
       if (targetEl) targetEl.classList.add('drop-target');
       block.classList.add('dragging-cross-track');
-      block.style.transform = `translateY(${dy}px)`;
     } else {
       block.classList.remove('dragging-cross-track');
-      block.style.transform = '';
     }
   }
   function onMouseMove(e) { moveTo(e.clientX, e.clientY); }
@@ -1893,7 +1898,6 @@ function makeEventDraggable(block, ev, track) {
     // Reset feedback
     document.querySelectorAll('.timeline-track.drop-target').forEach(t => t.classList.remove('drop-target'));
     block.classList.remove('dragging-cross-track');
-    block.style.transform = '';
     // Détecter si lâché sur une autre piste events
     const targetTrackId = detectTrackAtY(e.clientY);
     const targetTrack = targetTrackId ? findTrack(targetTrackId) : null;
@@ -2750,26 +2754,25 @@ async function importAudioAsClip(buffer) {
   if (!state.take) return;
   const bufferId = uid('vb');
   state.take.voiceBuffers[bufferId] = buffer;
+  // Temps de placement : playhead si défini, sinon 0
   const t = (state.playback.startAtTime && state.playback.startAtTime > 0)
     ? state.playback.startAtTime
-    : (state.take.duration || 0);
-  // Ajouter à la piste voix active, sinon la première
-  let track = getActiveTrack('voice');
-  if (!track) {
-    track = makeVoiceTrack();
-    state.take.tracks.push(track);
-  }
+    : 0;
+  // Toujours créer une nouvelle piste voix pour le clip importé
+  const fileName = `Voix importée`;
+  const track = makeVoiceTrack(fileName);
   track.clips.push({
     id: uid('vc'), bufferId,
     sourceStart: 0, sourceEnd: buffer.duration,
     time: t,
     volume: 1, muted: false, fadeIn: 0, fadeOut: 0,
   });
+  state.take.tracks.push(track);
   state.activeTrackId = track.id;
   recomputeDuration();
   pushHistory();
   renderTimeline();
-  showStatus(`Clip importé dans "${track.name}" à ${formatTime(t)}`, 'success');
+  showStatus(`Nouvelle piste "${track.name}" créée à ${formatTime(t)}`, 'success');
 }
 
 async function handleImportedAudioFile(file) {
@@ -3219,7 +3222,10 @@ document.addEventListener('keydown', e => {
     }
   }
   const idx = e.key === '0' ? 9 : parseInt(e.key) - 1;
-  if (!isNaN(idx) && idx >= 0 && idx < state.pads.length) triggerPad(state.pads[idx].id);
+  if (!isNaN(idx) && idx >= 0 && idx < state.pads.length) {
+    const addToTimeline = !!(e.ctrlKey || e.metaKey);
+    triggerPad(state.pads[idx].id, { addToTimeline });
+  }
 });
 
 window.addEventListener('beforeunload', e => { if (state.isRecording) { e.preventDefault(); e.returnValue = ''; } });
