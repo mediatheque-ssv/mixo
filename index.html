@@ -120,7 +120,7 @@
   .selection-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; padding: 10px 12px; background: #14161c; border: 1px solid #2a2f3a; border-radius: 8px; }
   .selection-toolbar.hidden { display: none; }
   .selection-toolbar-info { font-size: 13px; color: #fbbf24; font-variant-numeric: tabular-nums; }
-  .timeline-container { background: #0a0c10; border: 1px solid #2a2f3a; border-radius: 8px; overflow-x: auto; overflow-y: auto; position: relative; }
+  .timeline-container { background: #0a0c10; border: 1px solid #2a2f3a; border-radius: 8px; overflow-x: auto; overflow-y: visible; position: relative; }
   .timeline-container.drop-active { border-color: #3b82f6; box-shadow: inset 0 0 0 2px #3b82f6; }
   .timeline-inner { position: relative; }
   .timeline-track { position: relative; border-bottom: 1px solid #2a2f3a; overflow: visible; display: flex; }
@@ -396,7 +396,6 @@
           <div id="playhead" class="playhead"></div>
         </div>
       </div>
-      <div id="timelineResizer" class="resizer-vertical" title="Glisser pour redimensionner la timeline (double-clic pour auto)"></div>
 
       <div class="add-track-bar">
         <span style="font-size: 12px; color: #8a91a0;">Ajouter une piste :</span>
@@ -4334,13 +4333,10 @@ window.addEventListener('beforeunload', e => { if (state.isRecording) { e.preven
 
 // ===================== Resizer + tiroir inspector =====================
 const STORAGE_PADS_HEIGHT = 'mixo.padsHeight';
-const STORAGE_TIMELINE_HEIGHT = 'mixo.timelineHeight';
 const STORAGE_DRAWER_OPEN = 'mixo.drawerOpen';
 const DEFAULT_PADS_HEIGHT = 240; // px, hauteur de la grille de pads par défaut
 const MIN_PADS_HEIGHT = 90;
 const MAX_PADS_HEIGHT = 800;
-const MIN_TIMELINE_HEIGHT = 150;
-const MAX_TIMELINE_HEIGHT = 1200;
 
 function applyPadsHeight(h) {
   const grid = document.getElementById('padsGrid');
@@ -4352,28 +4348,6 @@ function loadPadsHeight() {
   const stored = parseInt(localStorage.getItem(STORAGE_PADS_HEIGHT) || '', 10);
   const h = isFinite(stored) ? Math.min(MAX_PADS_HEIGHT, Math.max(MIN_PADS_HEIGHT, stored)) : DEFAULT_PADS_HEIGHT;
   applyPadsHeight(h);
-}
-
-function applyTimelineHeight(h) {
-  const tc = document.getElementById('timelineContainer');
-  if (!tc) return;
-  if (h == null) {
-    // Mode auto : on enlève les contraintes pour laisser le contenu déterminer la hauteur
-    tc.style.height = '';
-    tc.style.maxHeight = '';
-    tc.style.minHeight = '';
-  } else {
-    tc.style.height = h + 'px';
-  }
-}
-function loadTimelineHeight() {
-  const stored = parseInt(localStorage.getItem(STORAGE_TIMELINE_HEIGHT) || '', 10);
-  if (isFinite(stored) && stored > 0) {
-    const h = Math.min(MAX_TIMELINE_HEIGHT, Math.max(MIN_TIMELINE_HEIGHT, stored));
-    applyTimelineHeight(h);
-  } else {
-    applyTimelineHeight(null);
-  }
 }
 
 function setupLayoutResizer() {
@@ -4410,40 +4384,6 @@ function setupLayoutResizer() {
   });
 }
 
-function setupTimelineResizer() {
-  const r = document.getElementById('timelineResizer');
-  if (!r) return;
-  const tc = document.getElementById('timelineContainer');
-  let startY, startH;
-  function onDown(e) {
-    e.preventDefault();
-    r.classList.add('dragging');
-    startY = e.clientY;
-    startH = tc.offsetHeight;
-    document.body.style.cursor = 'ns-resize';
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  }
-  function onMove(e) {
-    const dy = e.clientY - startY;
-    let newH = startH + dy;
-    newH = Math.max(MIN_TIMELINE_HEIGHT, Math.min(MAX_TIMELINE_HEIGHT, newH));
-    applyTimelineHeight(newH);
-  }
-  function onUp() {
-    r.classList.remove('dragging');
-    document.body.style.cursor = '';
-    document.removeEventListener('mousemove', onMove);
-    document.removeEventListener('mouseup', onUp);
-    localStorage.setItem(STORAGE_TIMELINE_HEIGHT, String(tc.offsetHeight));
-  }
-  r.addEventListener('mousedown', onDown);
-  r.addEventListener('dblclick', () => {
-    applyTimelineHeight(null); // mode auto
-    localStorage.removeItem(STORAGE_TIMELINE_HEIGHT);
-  });
-}
-
 function applyDrawerOpen(open) {
   const row = document.getElementById('editorMainRow');
   const toggle = document.getElementById('drawerToggle');
@@ -4460,6 +4400,13 @@ function setupDrawerToggle() {
     const willOpen = !row.classList.contains('drawer-open');
     applyDrawerOpen(willOpen);
     localStorage.setItem(STORAGE_DRAWER_OPEN, willOpen ? '1' : '0');
+    // Si l'utilisateur ferme manuellement alors qu'un item est sélectionné, on mémorise
+    // pour ne pas auto-rouvrir tant que la sélection reste la même.
+    if (!willOpen && state.selectedKind && state.selectedId) {
+      state.drawerDismissedFor = state.selectedKind + ':' + state.selectedId;
+    } else {
+      state.drawerDismissedFor = null;
+    }
     // Redraw timeline pour ajuster les largeurs
     setTimeout(() => { if (state.take) renderTimeline(); }, 220);
   });
@@ -4474,6 +4421,11 @@ function loadDrawerState() {
 // Ouvre le tiroir si quelque chose est sélectionné (utile pour ne pas rater l'info)
 function autoOpenDrawerIfNeeded() {
   if (!state.selectedKind || !state.selectedId) return;
+  // Si l'utilisateur vient de fermer le tiroir pour cet item précis, on ne le ré-ouvre pas
+  const currentSelKey = state.selectedKind + ':' + state.selectedId;
+  if (state.drawerDismissedFor === currentSelKey) return;
+  // Nouvelle sélection : on efface le flag
+  state.drawerDismissedFor = null;
   const row = document.getElementById('editorMainRow');
   if (!row.classList.contains('drawer-open')) {
     applyDrawerOpen(true);
@@ -4580,9 +4532,7 @@ async function offerResumeAutoSave() {
     await loadBanks();
     await listMics();
     loadPadsHeight();
-    loadTimelineHeight();
     setupLayoutResizer();
-    setupTimelineResizer();
     setupDrawerToggle();
     loadDrawerState();
     // Proposer la reprise après que tout soit prêt
