@@ -327,12 +327,12 @@
   </div>
   <div class="mixer">
     <div class="channel">
-      <div class="channel-label"><span>Micro</span><span class="channel-value" id="micVolVal">100%</span></div>
-      <input type="range" id="micVol" min="0" max="150" value="100">
-    </div>
-    <div class="channel">
       <div class="channel-label"><span>Pads</span><span class="channel-value" id="padVolVal">80%</span></div>
       <input type="range" id="padVol" min="0" max="150" value="80">
+    </div>
+    <div class="channel">
+      <div class="channel-label"><span>Pistes</span><span class="channel-value" id="tracksMonitorVolVal">80%</span></div>
+      <input type="range" id="tracksMonitorVol" min="0" max="150" value="80">
     </div>
   </div>
 </div>
@@ -890,12 +890,15 @@ function ensureAudioCtx() {
   state.micGain = state.audioCtx.createGain();
   state.padsGain = state.audioCtx.createGain();
   state.padsGain.gain.value = 0.8;
+  state.tracksMonitorGain = state.audioCtx.createGain();
+  state.tracksMonitorGain.gain.value = 0.8;
   state.micAnalyser = state.audioCtx.createAnalyser();
   state.micAnalyser.fftSize = 1024;
   state.destMic = state.audioCtx.createMediaStreamDestination();
   state.micGain.connect(state.micAnalyser);
   state.micGain.connect(state.destMic);
   state.padsGain.connect(state.audioCtx.destination);
+  state.tracksMonitorGain.connect(state.audioCtx.destination);
   startVuMeter();
 }
 
@@ -1037,7 +1040,8 @@ async function startRecording() {
 
 // Variante de playMix utilisée pour l'overdub :
 // joue les pistes existantes (sauf celle qu'on enregistre en direct) à partir de overdubStartTime,
-// avec la même chaîne d'effets que playMix.
+// avec la même chaîne d'effets que playMix, mais routée via tracksMonitorGain pour que l'utilisateur
+// puisse régler le volume du retour de monitoring sans toucher au mix final.
 function playMixForOverdub() {
   if (!state.take) return;
   state.playback.active = true;
@@ -1045,10 +1049,11 @@ function playMixForOverdub() {
   const startAt = state.overdubStartTime;
   const ctx = state.audioCtx;
   const masterLim = createLimiter(ctx);
-  masterLim.connect(ctx.destination);
+  // Route vers tracksMonitorGain (qui va vers destination), pas vers destination directement
+  masterLim.connect(state.tracksMonitorGain);
   state.playback.masterLimiter = masterLim;
   for (const track of state.take.tracks) {
-    if (track.id === state.overdubVoiceTrackId) continue; // ne pas jouer la piste en cours d'enregistrement (vide de toute façon)
+    if (track.id === state.overdubVoiceTrackId) continue;
     if (!trackIsAudible(track)) continue;
     const trackVol = track.volume ?? 1;
     let trackOut;
@@ -3643,15 +3648,15 @@ document.getElementById('micSelect').addEventListener('change', e => setupMic(e.
 document.getElementById('btnRec').addEventListener('click', startRecording);
 document.getElementById('btnPause').addEventListener('click', pauseRecording);
 document.getElementById('btnStop').addEventListener('click', stopRecording);
-document.getElementById('micVol').addEventListener('input', e => {
-  const v = e.target.value / 100;
-  if (state.micGain) state.micGain.gain.value = v;
-  document.getElementById('micVolVal').textContent = e.target.value + '%';
-});
 document.getElementById('padVol').addEventListener('input', e => {
   const v = e.target.value / 100;
   if (state.padsGain) state.padsGain.gain.value = v;
   document.getElementById('padVolVal').textContent = e.target.value + '%';
+});
+document.getElementById('tracksMonitorVol').addEventListener('input', e => {
+  const v = e.target.value / 100;
+  if (state.tracksMonitorGain) state.tracksMonitorGain.gain.value = v;
+  document.getElementById('tracksMonitorVolVal').textContent = e.target.value + '%';
 });
 document.getElementById('fileInput').addEventListener('change', e => {
   const f = e.target.files[0]; if (!f) return;
