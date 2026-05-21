@@ -1532,7 +1532,7 @@ function renderTracks(w) {
       </div>
       <div class="track-vol-row">
         <span>Vol</span>
-        <input type="range" min="0" max="150" value="${Math.round((track.volume ?? 1) * 100)}" data-track-vol="${track.id}">
+        <input type="range" min="0" max="400" value="${Math.round((track.volume ?? 1) * 100)}" data-track-vol="${track.id}">
         <span style="min-width:28px;text-align:right">${Math.round((track.volume ?? 1) * 100)}%</span>
       </div>
     `;
@@ -1584,8 +1584,8 @@ function renderTracks(w) {
     volSlider.addEventListener('input', e => {
       const v = parseInt(e.target.value);
       track.volume = v / 100;
-      // Mettre à jour le label inline
       e.target.nextElementSibling.textContent = v + '%';
+      refreshWaveformsOfTrack(track);
     });
     volSlider.addEventListener('change', () => pushHistory());
 
@@ -1683,13 +1683,13 @@ function renderVoiceClipsInTrack(container, track) {
       <button class="voice-clip-del" data-del="${clip.id}" title="Supprimer ce clip">×</button>
     `;
     container.appendChild(el);
-    drawClipWaveform(el.querySelector('canvas'), clip, track.color);
+    drawClipWaveform(el.querySelector('canvas'), clip, track.color, track.volume ?? 1);
     el.querySelector('.voice-clip-del').addEventListener('click', e => { e.stopPropagation(); removeVoiceClip(clip.id); });
     setupVoiceClipInteraction(el, clip, track);
   });
 }
 
-function drawClipWaveform(canvas, clip, color) {
+function drawClipWaveform(canvas, clip, color, trackVol) {
   const buf = getClipBuffer(clip);
   if (!canvas || !buf) return;
   const dur = clip.sourceEnd - clip.sourceStart;
@@ -1711,7 +1711,12 @@ function drawClipWaveform(canvas, clip, color) {
   if (sampleRange <= 0) return;
   const samplesPerPx = sampleRange / widthPx;
   const H = canvasHeight, mid = H / 2;
-  ctx.fillStyle = clip.muted ? '#475569' : (color || '#3b82f6');
+
+  // Volume effectif : volume du clip × volume de la piste
+  const effectiveGain = (clip.volume ?? 1) * (trackVol ?? 1);
+  const normalColor = clip.muted ? '#475569' : (color || '#3b82f6');
+  const clipColor = '#ef4444'; // rouge écrêtage
+
   for (let x = 0; x < widthPx; x++) {
     const s = sampleStart + Math.floor(x * samplesPerPx);
     const e = sampleStart + Math.floor((x + 1) * samplesPerPx);
@@ -1721,8 +1726,16 @@ function drawClipWaveform(canvas, clip, color) {
       if (v < mn) mn = v;
       if (v > mx) mx = v;
     }
-    const y1 = mid + mn * mid * 0.85;
-    const y2 = mid + mx * mid * 0.85;
+    // Amplification visuelle par le gain
+    const ampMin = mn * effectiveGain;
+    const ampMax = mx * effectiveGain;
+    // Clipping virtuel à ±1.0
+    const clippedMin = Math.max(-1, ampMin);
+    const clippedMax = Math.min(1, ampMax);
+    const isClipping = (ampMin < -1) || (ampMax > 1);
+    const y1 = mid + clippedMin * mid * 0.85;
+    const y2 = mid + clippedMax * mid * 0.85;
+    ctx.fillStyle = isClipping ? clipColor : normalColor;
     ctx.fillRect(x, y1, 1, Math.max(1, y2 - y1));
   }
 }
@@ -1975,7 +1988,7 @@ function renderEventsInTrack(container, track) {
       <button class="event-block-del" data-del="${ev.id}" style="z-index:13">×</button>
     `;
     container.appendChild(block);
-    drawEventWaveform(block.querySelector('canvas'), ev);
+    drawEventWaveform(block.querySelector('canvas'), ev, track.volume ?? 1);
     block.addEventListener('click', e => {
       if (e.target.dataset.del || e.target.dataset.trim) return;
       state.selectedKind = 'event';
@@ -1990,12 +2003,12 @@ function renderEventsInTrack(container, track) {
   });
 }
 
-function drawEventWaveform(canvas, ev) {
+function drawEventWaveform(canvas, ev, trackVol) {
   if (!canvas) return;
   const buf = state.padBuffers.get(ev.padId);
   if (!buf) return;
   const widthPx = Math.max(1, ev.duration * state.zoomPxPerSec);
-  const heightPx = 44; // hauteur du bloc
+  const heightPx = 44;
   const dpr = window.devicePixelRatio || 1;
   canvas.style.width = widthPx + 'px';
   canvas.style.height = heightPx + 'px';
@@ -2011,7 +2024,9 @@ function drawEventWaveform(canvas, ev) {
   if (sampleRange <= 0) return;
   const samplesPerPx = sampleRange / widthPx;
   const mid = heightPx / 2;
-  ctx.fillStyle = '#ffffff';
+  const effectiveGain = (ev.volume ?? 1) * (trackVol ?? 1);
+  const normalColor = '#ffffff';
+  const clipColor = '#ef4444';
   for (let x = 0; x < widthPx; x++) {
     const s = sampleStart + Math.floor(x * samplesPerPx);
     const e = sampleStart + Math.floor((x + 1) * samplesPerPx);
@@ -2021,8 +2036,14 @@ function drawEventWaveform(canvas, ev) {
       if (v < mn) mn = v;
       if (v > mx) mx = v;
     }
-    const y1 = mid + mn * mid * 0.85;
-    const y2 = mid + mx * mid * 0.85;
+    const ampMin = mn * effectiveGain;
+    const ampMax = mx * effectiveGain;
+    const clippedMin = Math.max(-1, ampMin);
+    const clippedMax = Math.min(1, ampMax);
+    const isClipping = (ampMin < -1) || (ampMax > 1);
+    const y1 = mid + clippedMin * mid * 0.85;
+    const y2 = mid + clippedMax * mid * 0.85;
+    ctx.fillStyle = isClipping ? clipColor : normalColor;
     ctx.fillRect(x, y1, 1, Math.max(1, y2 - y1));
   }
 }
@@ -2075,7 +2096,11 @@ function setupEventTrim(block, ev) {
       block.style.left = (ev.time * state.zoomPxPerSec) + 'px';
       block.style.width = Math.max(20, ev.duration * state.zoomPxPerSec) + 'px';
       const canvas = block.querySelector('canvas');
-      if (canvas) drawEventWaveform(canvas, ev);
+      if (canvas) {
+        const found = findEventById(ev.id);
+        const tv = found ? (found.track.volume ?? 1) : 1;
+        drawEventWaveform(canvas, ev, tv);
+      }
       recomputeDuration();
     }
     function onUp() {
@@ -2245,14 +2270,54 @@ document.getElementById('evVol').addEventListener('input', e => {
   const pct = parseInt(e.target.value);
   it.volume = pct / 100;
   document.getElementById('evVolVal').textContent = pct + '%';
+  // Mettre à jour la forme d'onde du clip/event concerné en direct
+  refreshWaveformOfSelected();
 });
 document.getElementById('evVol').addEventListener('change', () => pushHistory());
+
+function refreshWaveformsOfTrack(track) {
+  if (!track) return;
+  if (track.type === 'voice') {
+    for (const clip of track.clips) {
+      const clipEl = document.querySelector(`.voice-clip[data-id="${clip.id}"]`);
+      if (!clipEl) continue;
+      const canvas = clipEl.querySelector('canvas');
+      if (canvas) drawClipWaveform(canvas, clip, track.color, track.volume ?? 1);
+    }
+  } else {
+    for (const ev of track.events) {
+      const block = document.querySelector(`.event-block[data-id="${ev.id}"]`);
+      if (!block) continue;
+      const canvas = block.querySelector('canvas');
+      if (canvas) drawEventWaveform(canvas, ev, track.volume ?? 1);
+    }
+  }
+}
+
+function refreshWaveformOfSelected() {
+  if (!state.selectedKind || !state.selectedId) return;
+  if (state.selectedKind === 'event') {
+    const found = findEventById(state.selectedId);
+    if (!found) return;
+    const block = document.querySelector(`.event-block[data-id="${found.event.id}"]`);
+    if (!block) return;
+    const canvas = block.querySelector('canvas');
+    if (canvas) drawEventWaveform(canvas, found.event, found.track.volume ?? 1);
+  } else if (state.selectedKind === 'voice') {
+    const found = findClipById(state.selectedId);
+    if (!found) return;
+    const clipEl = document.querySelector(`.voice-clip[data-id="${found.clip.id}"]`);
+    if (!clipEl) return;
+    const canvas = clipEl.querySelector('canvas');
+    if (canvas) drawClipWaveform(canvas, found.clip, found.track.color, found.track.volume ?? 1);
+  }
+}
 document.getElementById('evFadeIn').addEventListener('input', e => {
   const it = getSelectedItem(); if (!it) return;
   const s = parseInt(e.target.value) / 10;
   it.fadeIn = s;
   document.getElementById('evFadeInVal').textContent = s.toFixed(1) + 's';
-  renderEventBlocks();
+  renderTimeline();
 });
 document.getElementById('evFadeIn').addEventListener('change', () => pushHistory());
 document.getElementById('evFadeOut').addEventListener('input', e => {
@@ -2260,7 +2325,7 @@ document.getElementById('evFadeOut').addEventListener('input', e => {
   const s = parseInt(e.target.value) / 10;
   it.fadeOut = s;
   document.getElementById('evFadeOutVal').textContent = s.toFixed(1) + 's';
-  renderEventBlocks();
+  renderTimeline();
 });
 document.getElementById('evFadeOut').addEventListener('change', () => pushHistory());
 document.getElementById('btnMuteEvent').addEventListener('click', () => {
@@ -2305,11 +2370,12 @@ document.getElementById('trackInspVol').addEventListener('input', e => {
     headSlider.value = v;
     if (headSlider.nextElementSibling) headSlider.nextElementSibling.textContent = v + '%';
   }
+  refreshWaveformsOfTrack(track);
 });
 document.getElementById('trackInspVol').addEventListener('change', () => pushHistory());
-document.getElementById('btnNormalizeTrack').addEventListener('click', () => {
+document.getElementById('btnNormalizeTrack').addEventListener('click', async () => {
   if (state.selectedKind !== 'track') return;
-  normalizeTrack(state.selectedId);
+  await normalizeTrack(state.selectedId);
 });
 document.getElementById('btnCompressTrack').addEventListener('click', () => {
   if (state.selectedKind !== 'track') return;
@@ -2681,18 +2747,131 @@ function computeTrackRMS(track) {
   return Math.sqrt(sumWeighted / totalDur);
 }
 
+// Mesure le RMS d'une piste après passage par sa chaîne d'effets (compresseur si activé).
+// Utilise un OfflineAudioContext pour rendre exactement comme à l'export, puis calcule le RMS du résultat.
+// IMPORTANT : on rend avec track.volume = 1 et SANS limiteur master pour mesurer le vrai RMS post-compression
+// sans biais lié au volume actuel ou au limiteur final.
+async function computeTrackRMSWithCompression(track) {
+  if (!track) return 0;
+  // Si pas de compression, on tombe sur le RMS brut (rapide, pas de rendu nécessaire)
+  if (!track.compressed) return computeTrackRMS(track);
+
+  // Déterminer la durée totale de la piste
+  let trackDuration = 0;
+  if (track.type === 'voice') {
+    for (const clip of track.clips) {
+      const end = clip.time + (clip.sourceEnd - clip.sourceStart);
+      if (end > trackDuration) trackDuration = end;
+    }
+  } else {
+    for (const ev of track.events) {
+      const end = ev.time + ev.duration;
+      if (end > trackDuration) trackDuration = end;
+    }
+  }
+  if (trackDuration <= 0) return 0;
+
+  const sr = state.audioCtx.sampleRate;
+  const offlineCtx = new OfflineAudioContext(1, Math.ceil((trackDuration + 0.2) * sr), sr);
+
+  // Compresseur identique à celui utilisé en preview/export
+  const comp = offlineCtx.createDynamicsCompressor();
+  comp.threshold.value = -22; comp.knee.value = 6; comp.ratio.value = 4;
+  comp.attack.value = 0.003; comp.release.value = 0.25;
+  comp.connect(offlineCtx.destination);
+
+  if (track.type === 'voice') {
+    for (const clip of track.clips) {
+      if (clip.muted) continue;
+      const buf = getClipBuffer(clip);
+      if (!buf) continue;
+      const clipDur = clip.sourceEnd - clip.sourceStart;
+      if (clipDur <= 0) continue;
+      const src = offlineCtx.createBufferSource();
+      src.buffer = buf;
+      const g = offlineCtx.createGain();
+      g.gain.value = (clip.volume ?? 1); // pas trackVol (on veut le RMS pré-volume-piste)
+      src.connect(g); g.connect(comp);
+      src.start(clip.time, clip.sourceStart, clipDur);
+    }
+  } else {
+    for (const ev of track.events) {
+      if (ev.muted) continue;
+      ensureEventTrim(ev);
+      const buf = state.padBuffers.get(ev.padId);
+      if (!buf) continue;
+      const src = offlineCtx.createBufferSource();
+      src.buffer = buf;
+      const g = offlineCtx.createGain();
+      g.gain.value = (ev.volume ?? 1);
+      src.connect(g); g.connect(comp);
+      src.start(ev.time, ev.sourceStart, ev.duration);
+    }
+  }
+
+  const rendered = await offlineCtx.startRendering();
+  // Calculer RMS uniquement sur les portions où il y a vraiment du son
+  // (sinon le silence inter-clips fait baisser artificiellement la moyenne)
+  return computeRMSOnActiveZones(rendered, track);
+}
+
+// Calcule le RMS uniquement sur les zones où la piste a du contenu
+// (somme des intervalles [clip.time, clip.time+dur] et [ev.time, ev.time+ev.duration])
+function computeRMSOnActiveZones(buffer, track) {
+  const sr = buffer.sampleRate;
+  const data = buffer.getChannelData(0);
+  let sumSquares = 0, count = 0;
+  const intervals = [];
+  if (track.type === 'voice') {
+    for (const clip of track.clips) {
+      if (clip.muted) continue;
+      const dur = clip.sourceEnd - clip.sourceStart;
+      if (dur > 0) intervals.push([clip.time, clip.time + dur]);
+    }
+  } else {
+    for (const ev of track.events) {
+      if (ev.muted) continue;
+      intervals.push([ev.time, ev.time + ev.duration]);
+    }
+  }
+  for (const [t0, t1] of intervals) {
+    const s0 = Math.max(0, Math.floor(t0 * sr));
+    const s1 = Math.min(buffer.length, Math.floor(t1 * sr));
+    for (let i = s0; i < s1; i++) {
+      const v = data[i] || 0;
+      sumSquares += v * v;
+      count++;
+    }
+  }
+  return count > 0 ? Math.sqrt(sumSquares / count) : 0;
+}
+
 // Actions de normalisation et de compression sur les pistes
-function normalizeTrack(trackId) {
+async function normalizeTrack(trackId) {
   const track = findTrack(trackId);
   if (!track) return;
-  const rms = computeTrackRMS(track);
+  // Si la piste est compressée, faire un rendu offline pour mesurer le RMS réel après compression.
+  // Sinon, calcul rapide direct.
+  let rms;
+  if (track.compressed) {
+    showStatus('Analyse du signal compressé…', 'info');
+    try {
+      rms = await computeTrackRMSWithCompression(track);
+    } catch (e) {
+      console.warn('Mesure RMS post-compression échouée, fallback RMS brut', e);
+      rms = computeTrackRMS(track);
+    }
+  } else {
+    rms = computeTrackRMS(track);
+  }
   if (rms <= 0) { showStatus("Piste vide ou silencieuse.", 'info'); return; }
   const gain = normalizationGainFromRMS(rms);
   track.volume = gain;
   pushHistory();
   renderTimeline();
   const db = (linearToDb(gain)).toFixed(1);
-  showStatus(`"${track.name}" normalisée (gain ${db > 0 ? '+' : ''}${db} dB)`, 'success');
+  const suffix = track.compressed ? ' (avec compression)' : '';
+  showStatus(`"${track.name}" normalisée (gain ${db > 0 ? '+' : ''}${db} dB)${suffix}`, 'success');
 }
 
 function toggleTrackCompression(trackId) {
