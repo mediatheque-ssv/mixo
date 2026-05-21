@@ -968,17 +968,36 @@ function pickMimeType() {
 
 async function startRecording() {
   if (!state.audioCtx) { showStatus('Sélectionne un micro d\'abord.', 'error'); return; }
-  // Si un projet est en cours (éditeur ouvert), confirmer avant de l'écraser
-  if (state.take && !document.getElementById('editorPanel').classList.contains('hidden')) {
-    if (!(await confirmDiscardDraft('démarres un nouvel enregistrement'))) return;
-    hideEditor();
-  }
   await state.audioCtx.resume();
-  // Init take avec les 2 pistes par défaut (vides pour l'instant)
-  state.take = { voiceBuffers: {}, tracks: [], duration: 0 };
-  state.take.tracks.push(makeVoiceTrack());
-  state.take.tracks.push(makeEventTrack());
-  state.activeTrackId = state.take.tracks[1].id; // bruitages actif pendant l'enregistrement (les pads vont dedans)
+
+  // Si un projet est déjà ouvert dans l'éditeur, on enregistre en OVERDUB :
+  // - on garde toutes les pistes existantes
+  // - on ajoute une nouvelle piste voix
+  // - l'enregistrement démarre au playhead courant
+  // - on joue les autres pistes pendant l'enregistrement
+  const inOverdub = state.take && state.take.tracks && state.take.tracks.length > 0;
+  if (inOverdub) {
+    state.overdubStartTime = state.playback.startAtTime || 0;
+    // Créer une nouvelle piste voix pour cette prise
+    const newVoiceTrack = makeVoiceTrack();
+    state.take.tracks.push(newVoiceTrack);
+    state.activeTrackId = newVoiceTrack.id;
+    state.overdubVoiceTrackId = newVoiceTrack.id;
+    // S'assurer qu'on a aussi une piste events active pour les pads déclenchés en direct
+    if (!state.take.tracks.some(t => t.type === 'events')) {
+      const newEventTrack = makeEventTrack();
+      state.take.tracks.push(newEventTrack);
+    }
+  } else {
+    // Premier enregistrement : on initialise un nouveau take
+    state.take = { voiceBuffers: {}, tracks: [], duration: 0 };
+    state.take.tracks.push(makeVoiceTrack());
+    state.take.tracks.push(makeEventTrack());
+    state.activeTrackId = state.take.tracks[1].id; // bruitages actif (les pads y vont)
+    state.overdubStartTime = 0;
+    state.overdubVoiceTrackId = state.take.tracks[0].id;
+  }
+
   const mime = pickMimeType();
   state.micChunks = [];
   try {
@@ -993,6 +1012,7 @@ async function startRecording() {
   state.elapsedBeforePause = 0;
   state.recStartCtxTime = state.audioCtx.currentTime;
   state.pausedDuration = 0;
+  state.isOverdub = inOverdub;
 
   document.getElementById('btnRec').classList.add('recording');
   document.getElementById('btnRec').disabled = true;
@@ -1000,9 +1020,65 @@ async function startRecording() {
   document.getElementById('btnStop').disabled = false;
   document.getElementById('timer').classList.add('live');
   document.getElementById('waveformLive').classList.add('visible');
-  document.getElementById('editorPanel').classList.add('hidden');
+  // Ne pas cacher l'éditeur si on est en overdub : on veut voir la timeline
+  if (!inOverdub) document.getElementById('editorPanel').classList.add('hidden');
 
   state.timerInterval = setInterval(updateTimer, 100);
+
+  // Si on est en overdub, démarrer la lecture des pistes existantes en parallèle
+  if (inOverdub) {
+    // Position de lecture = overdubStartTime ; on lance la lecture sans toucher au flag isRecording
+    // Note : on doit lancer playMix manuellement avec startAtTime déjà positionné
+    state.playback.startAtTime = state.overdubStartTime;
+    playMixForOverdub();
+    showStatus('Enregistrement par-dessus à partir de ' + formatTime(state.overdubStartTime), 'info');
+  }
+}
+
+// Variante de playMix utilisée pour l'overdub :
+// joue les pistes existantes (sauf celle qu'on enregistre en direct) à partir de overdubStartTime,
+// avec la même chaîne d'effets que playMix.
+function playMixForOverdub() {
+  if (!state.take) return;
+  state.playback.active = true;
+  state.playback.startCtxTime = state.audioCtx.currentTime;
+  const startAt = state.overdubStartTime;
+  const ctx = state.audioCtx;
+  const masterLim = createLimiter(ctx);
+  masterLim.connect(ctx.destination);
+  state.playback.masterLimiter = masterLim;
+  for (const track of state.take.tracks) {
+    if (track.id === state.overdubVoiceTrackId) continue; // ne pas jouer la piste en cours d'enregistrement (vide de toute façon)
+    if (!trackIsAudible(track)) continue;
+    const trackVol = track.volume ?? 1;
+    let trackOut;
+    if (track.compressed) {
+      const comp = createVoiceCompressor(ctx);
+      comp.connect(masterLim);
+      trackOut = comp;
+      state.playback.sources.push(comp);
+    } else {
+      trackOut = masterLim;
+    }
+    if (track.type === 'voice') {
+      for (const clip of track.clips) {
+        if (clip.muted) continue;
+        const clipDur = clip.sourceEnd - clip.sourceStart;
+        const clipEnd = clip.time + clipDur;
+        if (clipEnd <= startAt) continue;
+        scheduleClipPlayback(clip, startAt, trackVol, trackOut);
+      }
+    } else if (track.type === 'events') {
+      for (const ev of track.events) {
+        if (ev.muted) continue;
+        const buf = state.padBuffers.get(ev.padId);
+        if (!buf) continue;
+        const evEnd = ev.time + ev.duration;
+        if (evEnd <= startAt) continue;
+        scheduleEventPlayback(ev, buf, startAt, trackVol, trackOut);
+      }
+    }
+  }
 }
 
 function pauseRecording() {
@@ -1029,6 +1105,11 @@ function stopRecording() {
   state.micRecorder.stop();
   state.isRecording = false; state.isPaused = false;
   clearInterval(state.timerInterval);
+
+  // Si on était en overdub, arrêter la lecture des pistes existantes
+  if (state.isOverdub && state.playback.active) {
+    stopMixPlayback();
+  }
 
   document.getElementById('btnRec').classList.remove('recording');
   document.getElementById('btnRec').disabled = false;
@@ -1059,22 +1140,37 @@ async function onRecordingStop() {
     }
     const bufferId = uid('vb');
     state.take.voiceBuffers[bufferId] = voiceBuffer;
-    // Le clip va dans la première piste voix
-    const voiceTrack = state.take.tracks.find(t => t.type === 'voice');
+    // Insertion : dans la piste enregistrée (overdubVoiceTrackId), au temps overdubStartTime
+    const targetTrackId = state.overdubVoiceTrackId;
+    const startTime = state.overdubStartTime || 0;
+    let voiceTrack = targetTrackId ? findTrack(targetTrackId) : null;
+    if (!voiceTrack || voiceTrack.type !== 'voice') {
+      voiceTrack = state.take.tracks.find(t => t.type === 'voice');
+    }
     if (voiceTrack) {
       voiceTrack.clips.push({
         id: uid('vc'),
         bufferId,
         sourceStart: 0,
         sourceEnd: voiceBuffer.duration,
-        time: 0,
+        time: startTime,
         volume: 1, muted: false, fadeIn: 0, fadeOut: 0,
       });
     }
     recomputeDuration();
-    resetHistory();
-    await showEditor();
-    showStatus('Prise terminée. Édite la timeline ou exporte directement.', 'success');
+    if (state.isOverdub) {
+      // En overdub on ne reset pas l'historique (on garde celui du projet) et on garde l'éditeur ouvert
+      pushHistory();
+      renderTimeline();
+      showStatus('Prise ajoutée dans une nouvelle piste voix.', 'success');
+    } else {
+      resetHistory();
+      await showEditor();
+      showStatus('Prise terminée. Édite la timeline ou exporte directement.', 'success');
+    }
+    state.isOverdub = false;
+    state.overdubVoiceTrackId = null;
+    state.overdubStartTime = 0;
   }, 200);
 }
 
@@ -1430,7 +1526,9 @@ function triggerPad(id, opts) {
 
   // Cas 1 : enregistrement en cours → log dans la piste bruitages active (toujours, peu importe ctrl)
   if (state.isRecording && !state.isPaused) {
-    const t = state.audioCtx.currentTime - state.recStartCtxTime - state.pausedDuration;
+    const elapsed = state.audioCtx.currentTime - state.recStartCtxTime - state.pausedDuration;
+    // En overdub, on décale par overdubStartTime pour que le pad soit placé là où on l'a déclenché en temps timeline
+    const t = (state.overdubStartTime || 0) + elapsed;
     if (!state.take) {
       state.take = { voiceBuffers: {}, tracks: [], duration: 0 };
       state.take.tracks.push(makeVoiceTrack());
