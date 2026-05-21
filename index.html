@@ -359,6 +359,7 @@
       <div class="inspector-swatch" id="inspectorSwatch"></div>
       <div class="inspector-name" id="inspectorName">—</div>
       <div class="inspector-time" id="inspectorTime"></div>
+      <button id="btnNormalizeItem" class="icon-only" title="Normaliser ce clip">🔊</button>
       <button id="btnDuplicateEvent" class="icon-only" title="Dupliquer">⧉</button>
       <button id="btnMuteEvent" class="icon-only" title="Muet">🔇</button>
       <button id="btnDeleteEvent" class="icon-only" title="Supprimer">×</button>
@@ -375,6 +376,30 @@
       <div class="inspector-control">
         <div class="inspector-label"><span>Fade out</span><span class="channel-value" id="evFadeOutVal">0.0s</span></div>
         <input type="range" id="evFadeOut" min="0" max="50" value="0">
+      </div>
+    </div>
+  </div>
+
+  <!-- Inspector piste -->
+  <div id="trackInspectorPanel" class="inspector hidden">
+    <div class="inspector-header">
+      <div class="inspector-swatch" id="trackInspSwatch"></div>
+      <div class="inspector-name" id="trackInspName">—</div>
+      <span style="font-size:11px;color:#8a91a0;text-transform:uppercase;letter-spacing:0.4px;background:#0a0c10;padding:3px 8px;border-radius:4px;border:1px solid #2a2f3a">Piste</span>
+    </div>
+    <div class="inspector-controls">
+      <div class="inspector-control">
+        <div class="inspector-label"><span>Volume</span><span class="channel-value" id="trackInspVolVal">100%</span></div>
+        <input type="range" id="trackInspVol" min="0" max="400" value="100">
+      </div>
+      <div class="inspector-control" style="display:flex;flex-direction:column;gap:8px;justify-content:center">
+        <button id="btnNormalizeTrack" style="width:100%;justify-content:center">🔊 Normaliser la piste</button>
+        <button id="btnCompressTrack" style="width:100%;justify-content:center">🎙 Compression vocale</button>
+      </div>
+      <div class="inspector-control" style="display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap">
+        <button id="btnTrackInspMute" style="flex:1;justify-content:center">🔇 Muet</button>
+        <button id="btnTrackInspSolo" style="flex:1;justify-content:center">S Solo</button>
+        <button id="btnTrackInspDelete" class="danger" style="flex:1;justify-content:center">× Supprimer</button>
       </div>
     </div>
   </div>
@@ -1524,11 +1549,14 @@ function renderTracks(w) {
     if (track.type === 'voice') renderVoiceClipsInTrack(content, track);
     else renderEventsInTrack(content, track);
 
-    // Clic sur le header = activer la piste
+    // Clic sur le header = activer la piste + sélectionne (ouvre l'inspector piste)
     head.addEventListener('click', e => {
       if (e.target.closest('button')) return;
+      if (e.target.closest('input')) return;
       state.activeTrackId = track.id;
-      renderTracks(w);
+      state.selectedKind = 'track';
+      state.selectedId = track.id;
+      renderTimeline();
     });
 
     // Boutons header
@@ -2139,10 +2167,31 @@ function deleteEvent(id) {
 // === Inspector ===
 function renderInspector() {
   const panel = document.getElementById('inspectorPanel');
+  const trackPanel = document.getElementById('trackInspectorPanel');
   if (!state.selectedKind || !state.selectedId || !state.take) {
     panel.classList.add('hidden');
+    trackPanel.classList.add('hidden');
     return;
   }
+  // Cas : sélection d'une piste → afficher l'inspector piste
+  if (state.selectedKind === 'track') {
+    panel.classList.add('hidden');
+    const track = findTrack(state.selectedId);
+    if (!track) { trackPanel.classList.add('hidden'); return; }
+    trackPanel.classList.remove('hidden');
+    document.getElementById('trackInspSwatch').style.background = track.color;
+    document.getElementById('trackInspName').textContent = (track.type === 'voice' ? '🎤 ' : '🎵 ') + track.name + (track.muted ? ' (muet)' : '') + (track.solo ? ' (solo)' : '');
+    const volPct = Math.round((track.volume ?? 1) * 100);
+    document.getElementById('trackInspVol').value = volPct;
+    document.getElementById('trackInspVolVal').textContent = volPct + '%';
+    const compBtn = document.getElementById('btnCompressTrack');
+    compBtn.textContent = track.compressed ? '🎙 Compression : ACTIVE' : '🎙 Compression vocale';
+    compBtn.classList.toggle('primary', !!track.compressed);
+    document.getElementById('btnTrackInspMute').classList.toggle('primary', !!track.muted);
+    document.getElementById('btnTrackInspSolo').classList.toggle('primary', !!track.solo);
+    return;
+  }
+  trackPanel.classList.add('hidden');
   let item, label, color;
   if (state.selectedKind === 'event') {
     const found = findEventById(state.selectedId);
@@ -2162,8 +2211,11 @@ function renderInspector() {
   document.getElementById('inspectorName').textContent = label + (item.muted ? ' (muet)' : '');
   const dur = state.selectedKind === 'event' ? item.duration : (item.sourceEnd - item.sourceStart);
   document.getElementById('inspectorTime').textContent = `${formatTime(item.time)} → ${formatTime(item.time + dur)}`;
+  // Le volume max d'un clip peut aller jusqu'à 400% pour permettre la normalisation
+  const volSlider = document.getElementById('evVol');
+  volSlider.max = 400;
   const volPct = Math.round((item.volume ?? 1) * 100);
-  document.getElementById('evVol').value = volPct;
+  volSlider.value = volPct;
   document.getElementById('evVolVal').textContent = volPct + '%';
   const fIn = item.fadeIn || 0, fOut = item.fadeOut || 0;
   document.getElementById('evFadeIn').value = Math.round(fIn * 10);
@@ -2231,6 +2283,55 @@ document.getElementById('btnDuplicateEvent').addEventListener('click', () => {
   recomputeDuration();
   pushHistory();
   renderTimeline();
+});
+
+// Normaliser le clip/event sélectionné
+document.getElementById('btnNormalizeItem').addEventListener('click', () => {
+  if (!state.selectedKind || !state.selectedId) return;
+  if (state.selectedKind === 'track') return;
+  normalizeClipOrEvent(state.selectedId, state.selectedKind);
+});
+
+// === Inspector piste : bindings ===
+document.getElementById('trackInspVol').addEventListener('input', e => {
+  if (state.selectedKind !== 'track') return;
+  const track = findTrack(state.selectedId); if (!track) return;
+  const v = parseInt(e.target.value);
+  track.volume = v / 100;
+  document.getElementById('trackInspVolVal').textContent = v + '%';
+  // Mise à jour visuelle des sliders dans les headers de piste
+  const headSlider = document.querySelector(`[data-track-vol="${track.id}"]`);
+  if (headSlider) {
+    headSlider.value = v;
+    if (headSlider.nextElementSibling) headSlider.nextElementSibling.textContent = v + '%';
+  }
+});
+document.getElementById('trackInspVol').addEventListener('change', () => pushHistory());
+document.getElementById('btnNormalizeTrack').addEventListener('click', () => {
+  if (state.selectedKind !== 'track') return;
+  normalizeTrack(state.selectedId);
+});
+document.getElementById('btnCompressTrack').addEventListener('click', () => {
+  if (state.selectedKind !== 'track') return;
+  toggleTrackCompression(state.selectedId);
+});
+document.getElementById('btnTrackInspMute').addEventListener('click', () => {
+  if (state.selectedKind !== 'track') return;
+  const track = findTrack(state.selectedId); if (!track) return;
+  track.muted = !track.muted;
+  pushHistory();
+  renderTimeline();
+});
+document.getElementById('btnTrackInspSolo').addEventListener('click', () => {
+  if (state.selectedKind !== 'track') return;
+  const track = findTrack(state.selectedId); if (!track) return;
+  track.solo = !track.solo;
+  pushHistory();
+  renderTimeline();
+});
+document.getElementById('btnTrackInspDelete').addEventListener('click', () => {
+  if (state.selectedKind !== 'track') return;
+  deleteTrack(state.selectedId);
 });
 
 // === Zoom et playhead ===
@@ -2491,6 +2592,151 @@ document.getElementById('btnRedo').addEventListener('click', redo);
 document.getElementById('btnAddVoiceTrack').addEventListener('click', () => addNewTrack('voice'));
 document.getElementById('btnAddEventsTrack').addEventListener('click', () => addNewTrack('events'));
 
+// ===================== Helpers audio : RMS et limiteur =====================
+const TARGET_RMS_DBFS = -16; // cible standard pour podcast (-14 à -18 typique)
+const MAX_GAIN = 12;          // limite de sécurité : on n'amplifie pas plus de +12 dB-linéaire ≈ x4
+
+// Calcule le RMS d'une portion d'AudioBuffer (linéaire 0..1)
+function computeRMS(buffer, sourceStart, sourceEnd) {
+  const sr = buffer.sampleRate;
+  const startSample = Math.max(0, Math.floor((sourceStart ?? 0) * sr));
+  const endSample = Math.min(buffer.length, Math.floor((sourceEnd ?? buffer.duration) * sr));
+  if (endSample <= startSample) return 0;
+  let sumSquares = 0, count = 0;
+  for (let c = 0; c < buffer.numberOfChannels; c++) {
+    const data = buffer.getChannelData(c);
+    for (let i = startSample; i < endSample; i++) {
+      const v = data[i] || 0;
+      sumSquares += v * v;
+      count++;
+    }
+  }
+  return count > 0 ? Math.sqrt(sumSquares / count) : 0;
+}
+
+function dbToLinear(db) { return Math.pow(10, db / 20); }
+function linearToDb(linear) { return 20 * Math.log10(Math.max(0.000001, linear)); }
+
+// Calcule le gain à appliquer pour amener un RMS donné à la cible (en linéaire)
+function normalizationGainFromRMS(rms) {
+  if (rms <= 0) return 1;
+  const currentDb = linearToDb(rms);
+  const gainDb = TARGET_RMS_DBFS - currentDb;
+  let gainLin = dbToLinear(gainDb);
+  if (gainLin > MAX_GAIN) gainLin = MAX_GAIN;
+  if (gainLin < 0.01) gainLin = 0.01;
+  return gainLin;
+}
+
+// Crée un limiteur (DynamicsCompressorNode configuré en mode "limiteur strict")
+function createLimiter(ctx) {
+  const lim = ctx.createDynamicsCompressor();
+  lim.threshold.value = -1;     // dB : on commence à limiter dès -1 dBFS
+  lim.knee.value = 0;           // dur (limiteur)
+  lim.ratio.value = 20;         // très fort (limiteur strict)
+  lim.attack.value = 0.003;     // 3ms : attaque rapide
+  lim.release.value = 0.1;      // 100ms
+  return lim;
+}
+
+// Crée un compresseur "voix" (broadcast standard)
+function createVoiceCompressor(ctx) {
+  const c = ctx.createDynamicsCompressor();
+  c.threshold.value = -22;
+  c.knee.value = 6;
+  c.ratio.value = 4;
+  c.attack.value = 0.003;
+  c.release.value = 0.25;
+  return c;
+}
+
+// Calcule le RMS global d'une piste (moyenne pondérée des RMS des clips/events)
+function computeTrackRMS(track) {
+  let sumWeighted = 0, totalDur = 0;
+  if (track.type === 'voice') {
+    for (const clip of track.clips) {
+      if (clip.muted) continue;
+      const buf = getClipBuffer(clip);
+      if (!buf) continue;
+      const dur = clip.sourceEnd - clip.sourceStart;
+      if (dur <= 0) continue;
+      const rms = computeRMS(buf, clip.sourceStart, clip.sourceEnd);
+      sumWeighted += rms * rms * dur;
+      totalDur += dur;
+    }
+  } else {
+    for (const ev of track.events) {
+      if (ev.muted) continue;
+      const buf = state.padBuffers.get(ev.padId);
+      if (!buf) continue;
+      ensureEventTrim(ev);
+      const dur = ev.duration;
+      if (dur <= 0) continue;
+      const rms = computeRMS(buf, ev.sourceStart, ev.sourceEnd);
+      sumWeighted += rms * rms * dur;
+      totalDur += dur;
+    }
+  }
+  if (totalDur <= 0) return 0;
+  return Math.sqrt(sumWeighted / totalDur);
+}
+
+// Actions de normalisation et de compression sur les pistes
+function normalizeTrack(trackId) {
+  const track = findTrack(trackId);
+  if (!track) return;
+  const rms = computeTrackRMS(track);
+  if (rms <= 0) { showStatus("Piste vide ou silencieuse.", 'info'); return; }
+  const gain = normalizationGainFromRMS(rms);
+  track.volume = gain;
+  pushHistory();
+  renderTimeline();
+  const db = (linearToDb(gain)).toFixed(1);
+  showStatus(`"${track.name}" normalisée (gain ${db > 0 ? '+' : ''}${db} dB)`, 'success');
+}
+
+function toggleTrackCompression(trackId) {
+  const track = findTrack(trackId);
+  if (!track) return;
+  track.compressed = !track.compressed;
+  pushHistory();
+  renderTimeline();
+  showStatus(`Compression ${track.compressed ? 'activée' : 'désactivée'} sur "${track.name}"`, 'info');
+}
+
+function normalizeClipOrEvent(id, kind) {
+  if (kind === 'event') {
+    const found = findEventById(id);
+    if (!found) return;
+    const ev = found.event;
+    ensureEventTrim(ev);
+    const buf = state.padBuffers.get(ev.padId);
+    if (!buf) return;
+    const rms = computeRMS(buf, ev.sourceStart, ev.sourceEnd);
+    if (rms <= 0) { showStatus("Extrait silencieux.", 'info'); return; }
+    const gain = normalizationGainFromRMS(rms);
+    ev.volume = gain;
+    pushHistory();
+    renderTimeline();
+    const db = linearToDb(gain).toFixed(1);
+    showStatus(`Extrait normalisé (gain ${db > 0 ? '+' : ''}${db} dB)`, 'success');
+  } else if (kind === 'voice') {
+    const found = findClipById(id);
+    if (!found) return;
+    const clip = found.clip;
+    const buf = getClipBuffer(clip);
+    if (!buf) return;
+    const rms = computeRMS(buf, clip.sourceStart, clip.sourceEnd);
+    if (rms <= 0) { showStatus("Clip silencieux.", 'info'); return; }
+    const gain = normalizationGainFromRMS(rms);
+    clip.volume = gain;
+    pushHistory();
+    renderTimeline();
+    const db = linearToDb(gain).toFixed(1);
+    showStatus(`Clip normalisé (gain ${db > 0 ? '+' : ''}${db} dB)`, 'success');
+  }
+}
+
 // ===================== Lecture preview =====================
 function playMix() {
   if (!state.take || state.playback.active) return;
@@ -2498,16 +2744,33 @@ function playMix() {
   state.playback.startCtxTime = state.audioCtx.currentTime;
   const startAt = state.playback.startAtTime || 0;
 
+  const ctx = state.audioCtx;
+  // Bus master avec limiteur de sécurité (protège des saturations causées par superposition + normalisations)
+  const masterLim = createLimiter(ctx);
+  masterLim.connect(ctx.destination);
+  state.playback.masterLimiter = masterLim;
+
   for (const track of state.take.tracks) {
     if (!trackIsAudible(track)) continue;
     const trackVol = track.volume ?? 1;
+    // Préparer le nœud de sortie de cette piste : compresseur optionnel puis master
+    let trackOut;
+    if (track.compressed) {
+      const comp = createVoiceCompressor(ctx);
+      comp.connect(masterLim);
+      trackOut = comp;
+      state.playback.sources.push(comp); // pour pouvoir disconnect au stop
+    } else {
+      trackOut = masterLim;
+    }
+
     if (track.type === 'voice') {
       for (const clip of track.clips) {
         if (clip.muted) continue;
         const clipDur = clip.sourceEnd - clip.sourceStart;
         const clipEnd = clip.time + clipDur;
         if (clipEnd <= startAt) continue;
-        scheduleClipPlayback(clip, startAt, trackVol);
+        scheduleClipPlayback(clip, startAt, trackVol, trackOut);
       }
     } else if (track.type === 'events') {
       for (const ev of track.events) {
@@ -2516,7 +2779,7 @@ function playMix() {
         if (!buf) continue;
         const evEnd = ev.time + ev.duration;
         if (evEnd <= startAt) continue;
-        scheduleEventPlayback(ev, buf, startAt, trackVol);
+        scheduleEventPlayback(ev, buf, startAt, trackVol, trackOut);
       }
     }
   }
@@ -2526,7 +2789,7 @@ function playMix() {
   animatePlayhead();
 }
 
-function scheduleClipPlayback(clip, startAt, channelVol) {
+function scheduleClipPlayback(clip, startAt, channelVol, dest) {
   const ctx = state.audioCtx;
   const buf = getClipBuffer(clip);
   if (!buf) return;
@@ -2548,12 +2811,12 @@ function scheduleClipPlayback(clip, startAt, channelVol) {
     playDur = clipDur - skip;
   }
   applyFadesGain(g, when, playDur, clip.fadeIn || 0, clip.fadeOut || 0, baseVol);
-  src.connect(g); g.connect(ctx.destination);
+  src.connect(g); g.connect(dest || ctx.destination);
   src.start(when, bufferOffset, playDur + 0.05);
   state.playback.sources.push(src);
 }
 
-function scheduleEventPlayback(ev, buf, startAt, channelVol) {
+function scheduleEventPlayback(ev, buf, startAt, channelVol, dest) {
   ensureEventTrim(ev);
   const ctx = state.audioCtx;
   const src = ctx.createBufferSource();
@@ -2573,7 +2836,7 @@ function scheduleEventPlayback(ev, buf, startAt, channelVol) {
     playDur = ev.duration - skip;
   }
   applyFadesGain(g, when, playDur, ev.fadeIn || 0, ev.fadeOut || 0, baseVol);
-  src.connect(g); g.connect(ctx.destination);
+  src.connect(g); g.connect(dest || ctx.destination);
   src.start(when, bufferOffset, playDur + 0.05);
   state.playback.sources.push(src);
 }
@@ -2665,9 +2928,27 @@ async function exportMix() {
     const duration = state.take.duration + 0.5;
     const offlineCtx = new OfflineAudioContext(2, Math.ceil(duration * sampleRate), sampleRate);
 
+    // Bus master avec limiteur (protection saturation)
+    const masterLim = offlineCtx.createDynamicsCompressor();
+    masterLim.threshold.value = -1; masterLim.knee.value = 0; masterLim.ratio.value = 20;
+    masterLim.attack.value = 0.003; masterLim.release.value = 0.1;
+    masterLim.connect(offlineCtx.destination);
+
     for (const track of state.take.tracks) {
       if (!trackIsAudible(track)) continue;
       const trackVol = track.volume ?? 1;
+      // Bus de piste : compresseur optionnel puis master
+      let trackOut;
+      if (track.compressed) {
+        const comp = offlineCtx.createDynamicsCompressor();
+        comp.threshold.value = -22; comp.knee.value = 6; comp.ratio.value = 4;
+        comp.attack.value = 0.003; comp.release.value = 0.25;
+        comp.connect(masterLim);
+        trackOut = comp;
+      } else {
+        trackOut = masterLim;
+      }
+
       if (track.type === 'voice') {
         for (const clip of track.clips) {
           if (clip.muted) continue;
@@ -2680,7 +2961,7 @@ async function exportMix() {
           const g = offlineCtx.createGain();
           const baseVol = trackVol * (clip.volume ?? 1);
           applyFadesGainOffline(g, clip.time, clipDur, clip.fadeIn || 0, clip.fadeOut || 0, baseVol);
-          src.connect(g); g.connect(offlineCtx.destination);
+          src.connect(g); g.connect(trackOut);
           src.start(clip.time, clip.sourceStart, clipDur);
         }
       } else if (track.type === 'events') {
@@ -2694,7 +2975,7 @@ async function exportMix() {
           const g = offlineCtx.createGain();
           const baseVol = trackVol * (ev.volume ?? 1);
           applyFadesGainOffline(g, ev.time, ev.duration, ev.fadeIn || 0, ev.fadeOut || 0, baseVol);
-          src.connect(g); g.connect(offlineCtx.destination);
+          src.connect(g); g.connect(trackOut);
           src.start(ev.time, ev.sourceStart, ev.duration);
         }
       }
@@ -3573,7 +3854,8 @@ document.addEventListener('keydown', e => {
     if (state.voiceSelection) { applySelectionAction('delete'); return; }
     if (state.selectedKind && state.selectedId) {
       if (state.selectedKind === 'event') deleteEvent(state.selectedId);
-      else removeVoiceClip(state.selectedId);
+      else if (state.selectedKind === 'voice') removeVoiceClip(state.selectedId);
+      else if (state.selectedKind === 'track') deleteTrack(state.selectedId);
       return;
     }
   }
