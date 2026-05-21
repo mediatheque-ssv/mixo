@@ -66,6 +66,9 @@
   .pad-action-btn:hover { background: rgba(0,0,0,0.8); }
   .add-pad { background: #14161c; border: 2px dashed #2a2f3a; color: #8a91a0; font-size: 30px; cursor: pointer; }
   .add-pad:hover { background: #1c1f27; color: #e8ebf0; }
+  .pad.project-pad { border: 2px dashed rgba(255,255,255,0.5); }
+  .pad-badge { position: absolute; top: 4px; right: 4px; font-size: 9px; padding: 1px 5px; background: rgba(0,0,0,0.55); border-radius: 4px; color: #fff; letter-spacing: 0.3px; pointer-events: none; }
+  .pad.project-pad .pad-actions { right: 38px; }
 
   /* === ÉDITEUR === */
   .editor-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
@@ -551,7 +554,10 @@ const state = {
   selectedId: null,
   voiceSelection: null, // { start, end, clipId, trackId }
   activeTrackId: null,  // piste active : reçoit les nouveaux clips/events
-  projectBankId: null,  // banque dédiée du projet ouvert (null si pas de projet)
+  projectPads: [],      // pads du projet en cours (en mémoire seulement, embarqués dans le .mixo)
+  currentProjectId: null, // si on a ouvert un projet sauvegardé, son ID en DB (pour update plutôt que créer)
+  autoSaveTimer: null,  // timer setInterval pour l'auto-sauvegarde
+  autoSaveProjectId: null, // ID du projet d'auto-save (constant pendant la session)
 
   // Drag depuis la grille des pads vers la timeline
   padDragging: { padId: null, ghost: null },
@@ -643,6 +649,31 @@ function trackIsAudible(track) {
   const anySolo = state.take.tracks.some(t => t.solo);
   if (anySolo) return track.solo;
   return !track.muted;
+}
+
+// ===================== Pads de projet (en mémoire, embarqués dans le projet) =====================
+// Un "pad de projet" a la même forme qu'un pad normal mais n'est PAS stocké dans IndexedDB.
+// Il vit dans state.projectPads (array) tant que le projet est ouvert, et est sérialisé/désérialisé
+// dans buildProjectData / loadProjectData.
+
+function findProjectPad(id) {
+  return state.projectPads.find(p => p.id === id) || null;
+}
+
+// Retrouve un pad (permanent OU projet) par ID
+function findAnyPad(id) {
+  const permanent = state.pads.find(p => p.id === id);
+  if (permanent) return permanent;
+  return findProjectPad(id);
+}
+
+// Retrouve le buffer d'un pad (permanent OU projet)
+function getAnyPadBuffer(id) {
+  return state.padBuffers.get(id) || null;
+}
+
+function isPadOfProject(id) {
+  return !!findProjectPad(id);
 }
 
 // ===================== Historique (undo / redo) =====================
@@ -996,28 +1027,20 @@ async function loadBanks() {
   await loadPadsForBank(state.currentBankId);
 }
 function isProjectBank(bank) {
+  // Note : avec le nouveau modèle, plus aucune banque ne doit avoir ce préfixe.
+  // Gardé par sécurité pour ne pas crasher si des résidus existent.
   return bank.name && bank.name.startsWith('📂 ');
 }
 
 function renderBankSelect() {
   const sel = document.getElementById('bankSelect');
   sel.innerHTML = '';
-  const library = state.banks.filter(b => !isProjectBank(b));
-  const projects = state.banks.filter(b => isProjectBank(b));
-  const appendGroup = (label, banks) => {
-    if (banks.length === 0) return;
-    const group = document.createElement('optgroup');
-    group.label = label;
-    banks.forEach(b => {
-      const opt = document.createElement('option');
-      opt.value = b.id; opt.textContent = b.name;
-      if (b.id === state.currentBankId) opt.selected = true;
-      group.appendChild(opt);
-    });
-    sel.appendChild(group);
-  };
-  appendGroup('Bibliothèque', library);
-  appendGroup('Projets', projects);
+  state.banks.filter(b => !isProjectBank(b)).forEach(b => {
+    const opt = document.createElement('option');
+    opt.value = b.id; opt.textContent = b.name;
+    if (b.id === state.currentBankId) opt.selected = true;
+    sel.appendChild(opt);
+  });
 }
 async function switchBank(bankId) {
   state.activeSources.forEach(a => { try { a.source.stop(); } catch(e){} });
@@ -1067,15 +1090,21 @@ async function loadPadsForBank(bankId) {
 function renderPads() {
   const grid = document.getElementById('padsGrid');
   grid.innerHTML = '';
-  state.pads.forEach((pad, i) => {
+  // Ordre d'affichage : pads permanents de la banque courante d'abord, puis pads du projet en cours
+  const combined = [
+    ...state.pads.map(p => ({ pad: p, isProject: false })),
+    ...state.projectPads.map(p => ({ pad: p, isProject: true })),
+  ];
+  combined.forEach(({ pad, isProject }, i) => {
     const el = document.createElement('div');
-    el.className = 'pad' + (pad.loop ? ' loop' : '');
+    el.className = 'pad' + (pad.loop ? ' loop' : '') + (isProject ? ' project-pad' : '');
     el.style.background = pad.color;
     el.dataset.id = pad.id;
     el.draggable = false;
     const sc = i < 10 ? (i === 9 ? '0' : String(i+1)) : '';
     el.innerHTML = `
       ${sc ? `<div class="pad-shortcut">${sc}</div>` : ''}
+      ${isProject ? `<div class="pad-badge">📂 Projet</div>` : ''}
       <div class="pad-actions">
         <button class="pad-action-btn" data-edit="${pad.id}" title="Modifier">✎</button>
         <button class="pad-action-btn" data-del="${pad.id}" title="Supprimer">×</button>
@@ -1085,7 +1114,6 @@ function renderPads() {
       <div class="pad-loop">⟳ boucle</div>
       <div class="pad-progress" data-progress="${pad.id}"></div>
     `;
-    // Drag depuis un pad : on capture la souris pour distinguer click vs drag-to-timeline
     setupPadInteraction(el, pad);
     grid.appendChild(el);
   });
@@ -1236,29 +1264,37 @@ async function addPad(file, name, color, loop) {
 
 async function addPadFromAudioBuffer(buffer, name, color) {
   try {
+    // Si un projet est ouvert (éditeur ouvert), crée un pad de projet en mémoire seulement.
+    // Sinon, fallback : pad permanent dans la banque courante.
+    const editorOpen = state.take && !document.getElementById('editorPanel').classList.contains('hidden');
+    if (editorOpen) {
+      const pad = {
+        id: uid('p'),
+        name: name || 'Extrait',
+        color: color || PAD_COLORS[(state.pads.length + state.projectPads.length) % PAD_COLORS.length],
+        loop: false, volume: 1,
+        duration: buffer.duration,
+        // pas de blob ni de bankId : ce pad n'est pas en IndexedDB
+      };
+      state.projectPads.push(pad);
+      state.padBuffers.set(pad.id, buffer);
+      renderPads();
+      return pad;
+    }
+    // Fallback : pad permanent (cas peu probable mais on garde le code de secours)
     const blob = audioBufferToWavBlob(buffer);
-    // Si un projet est ouvert, le pad va dans la banque dédiée du projet ; sinon banque courante
-    const targetBankId = state.projectBankId || state.currentBankId;
     const pad = {
       id: uid('p'),
-      bankId: targetBankId,
+      bankId: state.currentBankId,
       name: name || 'Extrait',
       color: color || PAD_COLORS[state.pads.length % PAD_COLORS.length],
       loop: false, volume: 1, order: state.pads.length,
       blob, duration: buffer.duration,
     };
     await dbPut(STORE_PADS, pad);
-    // Si la banque cible est la courante, ajouter à state.pads, sinon basculer
-    if (targetBankId === state.currentBankId) {
-      state.pads.push(pad);
-      state.padBuffers.set(pad.id, buffer);
-      renderPads();
-    } else {
-      // La banque du projet n'est pas la banque actuellement affichée : on bascule dessus pour que l'utilisateur le voie
-      state.padBuffers.set(pad.id, buffer);
-      await switchBank(targetBankId);
-      renderBankSelect();
-    }
+    state.pads.push(pad);
+    state.padBuffers.set(pad.id, buffer);
+    renderPads();
     return pad;
   } catch (e) { showStatus("Erreur création du pad : " + e.message, 'error'); }
 }
@@ -1348,6 +1384,14 @@ function animatePadProgress(id) {
 async function deletePad(id) {
   if (!confirm('Supprimer ce pad ?')) return;
   if (state.activeSources.has(id)) { try { state.activeSources.get(id).source.stop(); } catch(e){} state.activeSources.delete(id); }
+  // Pad de projet : juste retirer de la liste mémoire
+  if (isPadOfProject(id)) {
+    state.projectPads = state.projectPads.filter(p => p.id !== id);
+    state.padBuffers.delete(id);
+    renderPads();
+    return;
+  }
+  // Pad permanent : retirer d'IndexedDB
   await dbDelete(STORE_PADS, id);
   state.pads = state.pads.filter(p => p.id !== id);
   state.padBuffers.delete(id);
@@ -1355,29 +1399,15 @@ async function deletePad(id) {
 }
 
 // ===================== ÉDITEUR =====================
-const DRAFT_PROJECT_BANK_NAME = '📂 Projet en cours';
-
-async function ensureDraftProjectBank() {
-  // Si on a déjà projectBankId (cas projet ouvert), on ne touche à rien
-  if (state.projectBankId && state.banks.find(b => b.id === state.projectBankId)) return;
-  // Chercher une banque "Projet en cours" existante
-  let bank = state.banks.find(b => b.name === DRAFT_PROJECT_BANK_NAME);
-  if (!bank) {
-    bank = { id: uid('b'), name: DRAFT_PROJECT_BANK_NAME };
-    await dbPut(STORE_BANKS, bank);
-    state.banks.push(bank);
-    renderBankSelect();
-  }
-  state.projectBankId = bank.id;
-}
-
 async function showEditor() {
   document.getElementById('editorPanel').classList.remove('hidden');
-  await ensureDraftProjectBank();
+  // Démarrer l'auto-sauvegarde du projet en cours (si pas déjà active)
+  startAutoSave();
   setTimeout(() => {
     const w = document.getElementById('timelineContainer').clientWidth - TRACK_HEAD_W - 30;
     state.zoomPxPerSec = Math.max(20, w / Math.max(state.take.duration, 5));
     renderTimeline();
+    renderPads();
     document.getElementById('editorPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, 50);
 }
@@ -1387,9 +1417,15 @@ function hideEditor() {
   state.selectedKind = null; state.selectedId = null;
   state.voiceSelection = null;
   state.history.stack = []; state.history.index = -1;
-  state.projectBankId = null;
+  // Nettoyage des pads de projet : retirer leurs buffers de la mémoire
+  for (const p of state.projectPads) state.padBuffers.delete(p.id);
+  state.projectPads = [];
+  state.currentProjectId = null;
+  state.autoSaveProjectId = null;
+  stopAutoSave();
   stopMixPlayback();
   state.take = null;
+  renderPads();
 }
 
 function getTimelineWidth() {
@@ -2481,42 +2517,12 @@ document.getElementById('btnDiscardTake').addEventListener('click', async () => 
   hideEditor();
 });
 
-async function cleanupDraftProjectBank() {
-  const draftBank = state.banks.find(b => b.name === DRAFT_PROJECT_BANK_NAME);
-  if (!draftBank) return;
-  // Supprimer tous les pads de cette banque
-  const allDbPads = await dbGetAll(STORE_PADS);
-  const padsToDelete = allDbPads.filter(p => p.bankId === draftBank.id);
-  for (const p of padsToDelete) {
-    await dbDelete(STORE_PADS, p.id);
-    state.padBuffers.delete(p.id);
-  }
-  // Supprimer la banque
-  await dbDelete(STORE_BANKS, draftBank.id);
-  state.banks = state.banks.filter(b => b.id !== draftBank.id);
-  // Si on était sur cette banque, basculer sur la première dispo
-  if (state.currentBankId === draftBank.id) {
-    const fallback = state.banks[0];
-    if (fallback) await switchBank(fallback.id);
-  }
-  renderBankSelect();
-}
-
-// Demande confirmation à l'utilisateur si la banque "Projet en cours" contient des pads
-// non sauvegardés, et fait le cleanup si confirmé. Retourne true si on peut continuer.
+// Demande confirmation si le projet en cours contient des pads non sauvegardés (projectPads non vide).
+// Retourne true si on peut continuer.
 async function confirmDiscardDraft(actionLabel) {
-  const draftBank = state.banks.find(b => b.name === DRAFT_PROJECT_BANK_NAME);
-  if (!draftBank) return true;
-  const allDbPads = await dbGetAll(STORE_PADS);
-  const padsInDraft = allDbPads.filter(p => p.bankId === draftBank.id).length;
-  if (padsInDraft === 0) {
-    // Rien à perdre, on supprime silencieusement la banque vide
-    await cleanupDraftProjectBank();
-    return true;
-  }
-  const msg = `La banque "${DRAFT_PROJECT_BANK_NAME}" contient ${padsInDraft} pad(s) non sauvegardé(s).\n\nSi tu ${actionLabel}, cette banque temporaire et ses pads seront supprimés. Pour les conserver :\n— sauvegarde le projet (les pads partiront avec)\n— ou déplace les pads importants vers une banque permanente (✎ sur le pad).\n\nContinuer ?`;
+  if (state.projectPads.length === 0) return true;
+  const msg = `Tu as ${state.projectPads.length} pad(s) de projet non sauvegardé(s).\n\nSi tu ${actionLabel}, ils seront perdus. Pour les conserver :\n— sauvegarde le projet (les pads partiront avec)\n— ou déplace les pads importants vers une banque permanente (✎ sur le pad).\n\nContinuer ?`;
   if (!confirm(msg)) return false;
-  await cleanupDraftProjectBank();
   return true;
 }
 
@@ -2714,10 +2720,16 @@ function openPadModal(editId) {
   const isEdit = !!editId;
   document.getElementById('modalTitle').textContent = isEdit ? 'Modifier le pad' : 'Ajouter un son';
   document.getElementById('modalOk').textContent = isEdit ? 'Enregistrer' : 'Ajouter';
-  let name = '', color = PAD_COLORS[state.pads.length % PAD_COLORS.length], loop = false, currentBankId = state.currentBankId;
+  let name = '', color = PAD_COLORS[(state.pads.length + state.projectPads.length) % PAD_COLORS.length], loop = false, currentBankId = state.currentBankId, isProject = false;
   if (isEdit) {
-    const pad = state.pads.find(p => p.id === editId);
-    if (pad) { name = pad.name; color = pad.color; loop = pad.loop; currentBankId = pad.bankId; }
+    const projPad = findProjectPad(editId);
+    if (projPad) {
+      name = projPad.name; color = projPad.color; loop = projPad.loop;
+      isProject = true;
+    } else {
+      const pad = state.pads.find(p => p.id === editId);
+      if (pad) { name = pad.name; color = pad.color; loop = pad.loop; currentBankId = pad.bankId; }
+    }
   } else if (state.pendingFile) {
     name = state.pendingFile.name.replace(/\.[^/.]+$/, '');
   }
@@ -2725,28 +2737,31 @@ function openPadModal(editId) {
   document.getElementById('modalLoop').checked = loop;
   state.selectedColor = color;
   renderColorPicker();
-  // Sélecteur de banque : visible uniquement en édition
+  // Sélecteur de banque : uniquement en édition, et liste juste les banques permanentes
   const bankRow = document.getElementById('modalBankRow');
   if (isEdit) {
     bankRow.style.display = 'block';
+    const label = bankRow.querySelector('label');
+    if (label) label.textContent = isProject
+      ? 'Convertir en pad permanent (choisir la banque)'
+      : 'Déplacer vers la banque';
     const bankSel = document.getElementById('modalBankSelect');
     bankSel.innerHTML = '';
-    const library = state.banks.filter(b => !isProjectBank(b));
-    const projects = state.banks.filter(b => isProjectBank(b));
-    const appendOptGroup = (label, banks) => {
-      if (banks.length === 0) return;
-      const g = document.createElement('optgroup');
-      g.label = label;
-      banks.forEach(b => {
-        const opt = document.createElement('option');
-        opt.value = b.id; opt.textContent = b.name;
-        if (b.id === currentBankId) opt.selected = true;
-        g.appendChild(opt);
-      });
-      bankSel.appendChild(g);
-    };
-    appendOptGroup('Bibliothèque', library);
-    appendOptGroup('Projets', projects);
+    if (isProject) {
+      // Option "rester un pad de projet" (par défaut)
+      const optKeep = document.createElement('option');
+      optKeep.value = '__keep__';
+      optKeep.textContent = '— Garder comme pad de projet —';
+      optKeep.selected = true;
+      bankSel.appendChild(optKeep);
+    }
+    const libraryBanks = state.banks.filter(b => !isProjectBank(b));
+    libraryBanks.forEach(b => {
+      const opt = document.createElement('option');
+      opt.value = b.id; opt.textContent = b.name;
+      if (!isProject && b.id === currentBankId) opt.selected = true;
+      bankSel.appendChild(opt);
+    });
   } else {
     bankRow.style.display = 'none';
   }
@@ -2770,20 +2785,45 @@ document.getElementById('modalOk').addEventListener('click', async () => {
   const loop = document.getElementById('modalLoop').checked;
   const color = state.selectedColor;
   if (state.editingPadId) {
-    const changes = { name, loop, color };
-    // Si déplacement de banque demandé
-    const newBankId = document.getElementById('modalBankSelect').value;
-    const pad = state.pads.find(p => p.id === state.editingPadId);
-    if (pad && newBankId && newBankId !== pad.bankId) {
-      changes.bankId = newBankId;
-    }
-    await updatePad(state.editingPadId, changes);
-    // Si on a déplacé le pad hors de la banque courante, le retirer de state.pads (sinon il reste visible)
-    if (changes.bankId && changes.bankId !== state.currentBankId) {
-      state.pads = state.pads.filter(p => p.id !== state.editingPadId);
+    const targetId = state.editingPadId;
+    const projPad = findProjectPad(targetId);
+    const permPad = state.pads.find(p => p.id === targetId);
+    const newBankSel = document.getElementById('modalBankSelect').value;
+    if (projPad) {
+      // Pad de projet
+      projPad.name = name; projPad.loop = loop; projPad.color = color;
+      if (newBankSel && newBankSel !== '__keep__') {
+        // Promouvoir vers banque permanente
+        const buf = state.padBuffers.get(targetId);
+        if (buf) {
+          const blob = audioBufferToWavBlob(buf);
+          const newPad = {
+            id: targetId, bankId: newBankSel, name, color, loop, volume: 1,
+            order: state.pads.length, blob, duration: projPad.duration,
+          };
+          await dbPut(STORE_PADS, newPad);
+          // Retirer de projectPads
+          state.projectPads = state.projectPads.filter(p => p.id !== targetId);
+          // Ajouter à state.pads si la banque cible est celle affichée
+          if (newBankSel === state.currentBankId) state.pads.push(newPad);
+          const targetBank = state.banks.find(b => b.id === newBankSel);
+          showStatus(`Pad promu vers "${targetBank?.name || 'banque permanente'}"`, 'success');
+        }
+      }
       renderPads();
-      const targetBank = state.banks.find(b => b.id === changes.bankId);
-      showStatus(`Pad déplacé vers "${targetBank?.name || 'autre banque'}"`, 'info');
+    } else if (permPad) {
+      // Pad permanent
+      const changes = { name, loop, color };
+      if (newBankSel && newBankSel !== '__keep__' && newBankSel !== permPad.bankId) {
+        changes.bankId = newBankSel;
+      }
+      await updatePad(targetId, changes);
+      if (changes.bankId && changes.bankId !== state.currentBankId) {
+        state.pads = state.pads.filter(p => p.id !== targetId);
+        renderPads();
+        const targetBank = state.banks.find(b => b.id === changes.bankId);
+        showStatus(`Pad déplacé vers "${targetBank?.name || 'autre banque'}"`, 'info');
+      }
     }
   }
   else if (state.pendingFile) await addPad(state.pendingFile, name, color, loop);
@@ -3019,26 +3059,20 @@ async function buildProjectData(name) {
   }
 
   // Récolter les pads à embarquer :
-  // 1. tous les pads de la banque du projet (state.projectBankId), même non utilisés sur la timeline
-  // 2. tous les pads référencés par des events, même si dans une autre banque
-  const allDbPads = await dbGetAll(STORE_PADS);
+  // 1. tous les pads du projet (state.projectPads), même non utilisés sur la timeline
+  // 2. tous les pads permanents référencés par des events (pour portabilité)
   const padsToEmbed = new Map();
-  if (state.projectBankId) {
-    for (const p of allDbPads.filter(p => p.bankId === state.projectBankId)) {
-      padsToEmbed.set(p.id, p);
-    }
-  }
+  for (const p of state.projectPads) padsToEmbed.set(p.id, { pad: p, fromProject: true });
+  const allDbPads = await dbGetAll(STORE_PADS);
   for (const ev of allEvents) {
-    if (!padsToEmbed.has(ev.padId)) {
-      const p = allDbPads.find(p => p.id === ev.padId);
-      if (p) padsToEmbed.set(ev.padId, p);
-    }
+    if (padsToEmbed.has(ev.padId)) continue;
+    const p = allDbPads.find(p => p.id === ev.padId);
+    if (p) padsToEmbed.set(ev.padId, { pad: p, fromProject: false });
   }
 
   // Encoder chaque pad embarqué
   const pads = [];
-  for (const pad of padsToEmbed.values()) {
-    // Récupérer le buffer (en mémoire si possible, sinon depuis le blob)
+  for (const { pad, fromProject } of padsToEmbed.values()) {
     let buf = state.padBuffers.get(pad.id);
     if (!buf && pad.blob) {
       try {
@@ -3052,6 +3086,7 @@ async function buildProjectData(name) {
     pads.push({
       id: pad.id, name: pad.name, color: pad.color, loop: pad.loop, duration: pad.duration,
       audio: dataUrl,
+      fromProject, // permet à loadProjectData de savoir où le remettre
     });
   }
 
@@ -3080,58 +3115,17 @@ async function buildProjectData(name) {
   };
 }
 
-async function ensureProjectBank(name) {
-  const targetName = `📂 ${name}`;
-  // Si on a déjà une projectBankId (cas projet ouvert OU banque "Projet en cours" déjà créée)
-  if (state.projectBankId) {
-    const existing = state.banks.find(b => b.id === state.projectBankId);
-    if (existing) {
-      // Si le nom diffère, on renomme (cas "Projet en cours" → nom du projet, ou nouveau nom de projet)
-      if (existing.name !== targetName) {
-        // Vérifier qu'aucune autre banque n'a déjà ce nom
-        const conflict = state.banks.find(b => b.id !== existing.id && b.name === targetName);
-        if (conflict) {
-          // Conflit : on fusionne en migrant les pads de notre banque vers celle qui existe déjà
-          const ourPads = await dbGetAll(STORE_PADS);
-          for (const p of ourPads.filter(p => p.bankId === existing.id)) {
-            p.bankId = conflict.id;
-            await dbPut(STORE_PADS, p);
-          }
-          await dbDelete(STORE_BANKS, existing.id);
-          state.banks = state.banks.filter(b => b.id !== existing.id);
-          state.projectBankId = conflict.id;
-          if (state.currentBankId === existing.id) await switchBank(conflict.id);
-        } else {
-          existing.name = targetName;
-          await dbPut(STORE_BANKS, existing);
-        }
-        renderBankSelect();
-      }
-      return;
-    }
-  }
-  // Pas de banque projet : en créer une (cas anciens projets sans flux normal)
-  let projectBank = state.banks.find(b => b.name === targetName);
-  if (!projectBank) {
-    projectBank = { id: uid('b'), name: targetName };
-    await dbPut(STORE_BANKS, projectBank);
-    state.banks.push(projectBank);
-    renderBankSelect();
-  }
-  state.projectBankId = projectBank.id;
-}
-
 async function saveProjectToDB(name) {
-  await ensureProjectBank(name);
   const data = await buildProjectData(name);
-  const id = uid('pr');
+  // Si on a déjà un currentProjectId (projet ouvert), on l'écrase avec le nouveau contenu
+  const id = state.currentProjectId || uid('pr');
   await dbPut(STORE_PROJECTS, { id, name: data.name, createdAt: data.createdAt, data });
+  state.currentProjectId = id;
   showStatus(`Projet "${data.name}" sauvegardé`, 'success');
   return id;
 }
 
 async function downloadProjectFile(name) {
-  await ensureProjectBank(name);
   const data = await buildProjectData(name);
   const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -3163,34 +3157,27 @@ async function loadProjectData(data) {
     throw new Error("Aucun audio dans le projet.");
   }
 
-  // === Pads : déduplication par ID + banque dédiée pour ce projet ===
-  // 1. Récupérer tous les pads présents dans IndexedDB (toutes banques confondues)
+  // === Pads : dédup par ID, ceux non présents vont dans projectPads (mémoire) ===
+  // 1. Récupérer tous les pads PERMANENTS présents dans IndexedDB
   const allExistingPads = await dbGetAll(STORE_PADS);
   const existingByPadId = new Map(allExistingPads.map(p => [p.id, p]));
 
-  // 2. Préparer la banque dédiée au projet (créer si pas existante)
-  const projectBankName = `📂 ${data.name}`;
-  let projectBank = state.banks.find(b => b.name === projectBankName);
-  if (!projectBank) {
-    projectBank = { id: uid('b'), name: projectBankName };
-    await dbPut(STORE_BANKS, projectBank);
-    state.banks.push(projectBank);
-  }
-  state.projectBankId = projectBank.id;
+  // 2. Reset des projectPads précédents
+  for (const p of state.projectPads) state.padBuffers.delete(p.id);
+  state.projectPads = [];
 
-  // 3. Pour chaque pad du projet :
-  //    - s'il existe déjà par ID dans IndexedDB, on le réutilise (pas de duplication)
-  //    - sinon on le crée dans la banque dédiée au projet
+  // 3. Pour chaque pad embarqué :
+  //    - s'il existe déjà comme pad permanent : on le réutilise (juste s'assurer que son buffer est en mémoire)
+  //    - sinon : on le met dans state.projectPads (en mémoire seulement)
   const padsToCreate = (data.pads || []);
   const idMap = new Map();
-  let reused = 0, created = 0;
+  let reused = 0, asProject = 0;
   for (const p of padsToCreate) {
     if (existingByPadId.has(p.id)) {
-      // Pad déjà présent : on le réutilise (peu importe la banque où il se trouve)
+      // Pad permanent déjà présent : on le réutilise
       const existing = existingByPadId.get(p.id);
       idMap.set(p.id, existing);
-      // S'assurer qu'il est chargé en mémoire
-      if (!state.padBuffers.has(p.id)) {
+      if (!state.padBuffers.has(p.id) && existing.blob) {
         try {
           const ab = await existing.blob.arrayBuffer();
           const buf = await state.audioCtx.decodeAudioData(ab.slice(0));
@@ -3199,34 +3186,28 @@ async function loadProjectData(data) {
       }
       reused++;
     } else {
-      // Nouveau pad : décoder l'audio et le créer dans la banque du projet
+      // Nouveau pad : on le met dans state.projectPads (mémoire seulement, pas en IndexedDB)
       try {
         const buf = await base64ToAudioBuffer(p.audio);
-        const res = await fetch(p.audio);
-        const blob = await res.blob();
         const padObj = {
-          id: p.id, bankId: projectBank.id, name: p.name,
-          color: p.color, loop: p.loop, volume: 1, order: 0,
-          blob, duration: p.duration,
+          id: p.id, name: p.name, color: p.color, loop: p.loop, volume: 1,
+          duration: p.duration,
+          // pas de blob ni bankId : ce pad reste en mémoire
         };
-        await dbPut(STORE_PADS, padObj);
+        state.projectPads.push(padObj);
         state.padBuffers.set(p.id, buf);
         idMap.set(p.id, padObj);
-        created++;
+        asProject++;
       } catch (e) {
-        console.error('Erreur création pad du projet :', p.name, e);
+        console.error('Erreur chargement pad du projet :', p.name, e);
       }
     }
   }
 
-  // 4. Basculer sur la banque dédiée au projet pour que l'utilisateur voie ses pads
-  await switchBank(projectBank.id);
-  renderBankSelect();
-
-  if (reused > 0 || created > 0) {
+  if (reused > 0 || asProject > 0) {
     const msgs = [];
-    if (created > 0) msgs.push(`${created} pad(s) ajouté(s) à "${projectBankName}"`);
-    if (reused > 0) msgs.push(`${reused} pad(s) déjà présent(s) réutilisé(s)`);
+    if (asProject > 0) msgs.push(`${asProject} pad(s) de projet chargé(s)`);
+    if (reused > 0) msgs.push(`${reused} déjà présent(s) réutilisé(s)`);
     showStatus(msgs.join(' · '), 'info');
   }
 
@@ -3266,6 +3247,7 @@ async function loadProjectData(data) {
     duration: data.duration || 0,
   };
   state.activeTrackId = tracks[0]?.id || null;
+  state.currentProjectId = null; // sera (re)défini par openProjectFromDB si on a ouvert un projet sauvegardé
   recomputeDuration();
   resetHistory();
   await showEditor();
@@ -3359,7 +3341,7 @@ async function renderProjectsList() {
   }
 }
 async function openProjectFromDB(id) {
-  // Confirmer si projet en cours d'édition avec banque temporaire non sauvegardée
+  // Confirmer si projet en cours d'édition
   if (state.take && !document.getElementById('editorPanel').classList.contains('hidden')) {
     if (!(await confirmDiscardDraft('ouvres un autre projet'))) return;
   }
@@ -3369,7 +3351,11 @@ async function openProjectFromDB(id) {
     const p = req.result; if (!p) return;
     document.getElementById('loadProjectModal').classList.remove('visible');
     showProgress('Chargement du projet…', 30);
-    try { await loadProjectData(p.data); }
+    try {
+      await loadProjectData(p.data);
+      // Si ce n'est pas une auto-save, on retient l'ID pour pouvoir l'écraser à la prochaine sauvegarde
+      if (!p.isAutoSave) state.currentProjectId = id;
+    }
     catch (e) { showStatus('Erreur : ' + e.message, 'error'); }
     finally { hideProgress(); }
   };
@@ -3478,12 +3464,97 @@ document.addEventListener('keydown', e => {
 
 window.addEventListener('beforeunload', e => { if (state.isRecording) { e.preventDefault(); e.returnValue = ''; } });
 
+// ===================== AUTO-SAVE & NETTOYAGE =====================
+const AUTOSAVE_NAME_PREFIX = '💾 Auto — ';
+const AUTOSAVE_INTERVAL_MS = 30000;
+const OLD_PROJECT_BANK_PATTERN = /^📂 /;
+
+// Au démarrage : nettoyer les anciennes banques "📂 ..." qui traînaient de l'ancien modèle
+async function cleanupLegacyProjectBanks() {
+  try {
+    const allBanks = await dbGetAll(STORE_BANKS);
+    const legacyBanks = allBanks.filter(b => OLD_PROJECT_BANK_PATTERN.test(b.name));
+    if (legacyBanks.length === 0) return;
+    for (const b of legacyBanks) {
+      // Supprimer ses pads
+      const allPads = await dbGetAll(STORE_PADS);
+      for (const p of allPads.filter(p => p.bankId === b.id)) {
+        await dbDelete(STORE_PADS, p.id);
+      }
+      await dbDelete(STORE_BANKS, b.id);
+    }
+    console.log(`[cleanup] Supprimé ${legacyBanks.length} banque(s) résiduelle(s) "📂"`);
+  } catch (e) { console.warn('Cleanup failed', e); }
+}
+
+function startAutoSave() {
+  stopAutoSave();
+  // Un ID unique pour toute la durée de cette session d'édition
+  if (!state.autoSaveProjectId) state.autoSaveProjectId = uid('autosave');
+  state.autoSaveTimer = setInterval(async () => {
+    if (!state.take) return;
+    try {
+      const data = await buildProjectData(`session-${state.autoSaveProjectId}`);
+      // Nom lisible affiché à l'utilisateur dans la liste
+      const ts = new Date().toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+      data.name = `${AUTOSAVE_NAME_PREFIX}${ts}`;
+      await dbPut(STORE_PROJECTS, {
+        id: state.autoSaveProjectId,
+        name: data.name,
+        createdAt: data.createdAt,
+        data,
+        isAutoSave: true,
+      });
+    } catch (e) {
+      console.warn('Auto-save failed', e);
+    }
+  }, AUTOSAVE_INTERVAL_MS);
+}
+
+function stopAutoSave() {
+  if (state.autoSaveTimer) clearInterval(state.autoSaveTimer);
+  state.autoSaveTimer = null;
+}
+
+// Une seule auto-save survit entre les sessions (la plus récente). On nettoie les autres au démarrage.
+async function pruneOldAutoSaves() {
+  try {
+    const all = await dbGetAll(STORE_PROJECTS);
+    const autosaves = all.filter(p => p.isAutoSave).sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    // Garder uniquement la plus récente
+    for (let i = 1; i < autosaves.length; i++) {
+      await dbDelete(STORE_PROJECTS, autosaves[i].id);
+    }
+    return autosaves[0] || null;
+  } catch (e) { console.warn('Prune autosaves failed', e); return null; }
+}
+
+// Propose à l'utilisateur de reprendre la dernière auto-save au démarrage
+async function offerResumeAutoSave() {
+  const lastAutoSave = await pruneOldAutoSaves();
+  if (!lastAutoSave) return;
+  const date = lastAutoSave.createdAt ? new Date(lastAutoSave.createdAt).toLocaleString('fr-FR') : '?';
+  const ok = confirm(`Une session non sauvegardée du ${date} est disponible.\n\nReprendre ?`);
+  if (ok) {
+    showProgress('Reprise de la session…', 30);
+    try { await loadProjectData(lastAutoSave.data); }
+    catch (e) { showStatus('Erreur : ' + e.message, 'error'); }
+    finally { hideProgress(); }
+  } else {
+    // L'utilisateur refuse : on supprime l'auto-save pour ne plus la proposer
+    await dbDelete(STORE_PROJECTS, lastAutoSave.id);
+  }
+}
+
 // ===================== Init =====================
 (async function init() {
   try {
     state.db = await openDB();
+    await cleanupLegacyProjectBanks();
     await loadBanks();
     await listMics();
+    // Proposer la reprise après que tout soit prêt
+    setTimeout(() => offerResumeAutoSave(), 500);
   } catch (e) {
     showStatus('Erreur d\'initialisation : ' + e.message, 'error');
     console.error(e);
