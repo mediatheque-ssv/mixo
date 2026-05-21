@@ -1233,11 +1233,35 @@ function addPadToTimeline(padId, time, targetTrackId) {
   const pad = findAnyPad(padId);
   const buf = state.padBuffers.get(padId);
   if (!pad || !buf || !state.take) return;
-  // Choisir la piste : trackId explicite si fourni, sinon piste active de type events, sinon première
-  let track = targetTrackId ? findTrack(targetTrackId) : null;
-  if (!track || track.type !== 'events') track = getActiveTrack('events');
+
+  // Si la piste cible est une piste voix → on transforme le pad en CLIP VOIX
+  // (copie du buffer dans state.take.voiceBuffers)
+  const targetTrack = targetTrackId ? findTrack(targetTrackId) : null;
+  if (targetTrack && targetTrack.type === 'voice') {
+    const bufferId = uid('vb');
+    state.take.voiceBuffers[bufferId] = buf;
+    const clip = {
+      id: uid('vc'),
+      bufferId,
+      sourceStart: 0,
+      sourceEnd: buf.duration,
+      time,
+      volume: 1, muted: false, fadeIn: 0, fadeOut: 0,
+    };
+    targetTrack.clips.push(clip);
+    recomputeDuration();
+    state.selectedKind = 'voice';
+    state.selectedId = clip.id;
+    state.activeTrackId = targetTrack.id;
+    pushHistory();
+    renderTimeline();
+    showStatus(`"${pad.name}" inséré comme clip voix dans ${targetTrack.name}`, 'info');
+    return;
+  }
+
+  // Sinon, comportement classique : on crée un EVENT BRUITAGE
+  let track = targetTrack && targetTrack.type === 'events' ? targetTrack : getActiveTrack('events');
   if (!track) {
-    // Pas de piste bruitages : on en crée une
     track = makeEventTrack();
     state.take.tracks.push(track);
   }
@@ -1247,6 +1271,7 @@ function addPadToTimeline(padId, time, targetTrackId) {
     padName: pad.name,
     color: pad.color,
     time, duration: buf.duration,
+    sourceStart: 0, sourceEnd: buf.duration,
     volume: 1, muted: false, fadeIn: 0, fadeOut: 0,
   };
   track.events.push(ev);
