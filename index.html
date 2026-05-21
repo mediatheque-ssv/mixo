@@ -146,6 +146,12 @@
 
   /* Blocs bruitages */
   .event-block { position: absolute; top: 22px; height: 44px; border-radius: 6px; cursor: grab; display: flex; align-items: center; padding: 0 8px; font-size: 11px; font-weight: 500; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.4); overflow: hidden; box-sizing: border-box; border: 1px solid rgba(255,255,255,0.2); white-space: nowrap; transition: box-shadow 0.1s; user-select: none; }
+  .event-block canvas { position: absolute; top: 0; left: 0; pointer-events: none; opacity: 0.55; }
+  .event-block .event-trim-handle { position: absolute; top: 0; bottom: 0; width: 6px; cursor: ew-resize; background: rgba(255,255,255,0); transition: background 0.15s; z-index: 12; }
+  .event-block .event-trim-handle.left { left: 0; }
+  .event-block .event-trim-handle.right { right: 0; }
+  .event-block:hover .event-trim-handle { background: rgba(255,255,255,0.35); }
+  .event-block .event-trim-handle:hover, .event-block .event-trim-handle.active { background: rgba(255,255,255,0.7) !important; }
   .event-block:hover { box-shadow: 0 0 0 2px rgba(255,255,255,0.4); z-index: 10; }
   .event-block.dragging { cursor: grabbing; box-shadow: 0 0 0 2px #fff; z-index: 20; }
   .event-block.selected { box-shadow: 0 0 0 2px #fff; z-index: 10; }
@@ -1902,8 +1908,15 @@ function removeVoiceClip(id) {
 }
 
 // === Rendu des blocs bruitages dans une piste ===
+// Initialise sourceStart/sourceEnd sur un event s'ils n'existent pas (compat avec d'anciens projets)
+function ensureEventTrim(ev) {
+  if (ev.sourceStart == null) ev.sourceStart = 0;
+  if (ev.sourceEnd == null) ev.sourceEnd = ev.duration;
+}
+
 function renderEventsInTrack(container, track) {
   track.events.forEach(ev => {
+    ensureEventTrim(ev);
     const block = document.createElement('div');
     block.className = 'event-block'
       + (state.selectedKind === 'event' && state.selectedId === ev.id ? ' selected' : '')
@@ -1918,21 +1931,25 @@ function renderEventsInTrack(container, track) {
     const fIn = ev.fadeIn || 0, fOut = ev.fadeOut || 0;
     if (fIn > 0) {
       const w = Math.min(blockWidth, fIn * state.zoomPxPerSec);
-      overlays += `<div style="position:absolute;left:0;top:0;bottom:0;width:${w}px;background:linear-gradient(90deg,rgba(0,0,0,0.55),rgba(0,0,0,0));pointer-events:none"></div>`;
+      overlays += `<div style="position:absolute;left:0;top:0;bottom:0;width:${w}px;background:linear-gradient(90deg,rgba(0,0,0,0.55),rgba(0,0,0,0));pointer-events:none;z-index:6"></div>`;
     }
     if (fOut > 0) {
       const w = Math.min(blockWidth, fOut * state.zoomPxPerSec);
-      overlays += `<div style="position:absolute;right:0;top:0;bottom:0;width:${w}px;background:linear-gradient(270deg,rgba(0,0,0,0.55),rgba(0,0,0,0));pointer-events:none"></div>`;
+      overlays += `<div style="position:absolute;right:0;top:0;bottom:0;width:${w}px;background:linear-gradient(270deg,rgba(0,0,0,0.55),rgba(0,0,0,0));pointer-events:none;z-index:6"></div>`;
     }
 
     block.innerHTML = `
+      <canvas data-event-canvas="${ev.id}"></canvas>
       ${overlays}
-      <span class="event-block-name">${escapeHtml(ev.padName)}${ev.muted ? ' 🔇' : ''}</span>
-      <button class="event-block-del" data-del="${ev.id}">×</button>
+      <div class="event-trim-handle left" data-trim="left"></div>
+      <div class="event-trim-handle right" data-trim="right"></div>
+      <span class="event-block-name" style="position:relative;z-index:7">${escapeHtml(ev.padName)}${ev.muted ? ' 🔇' : ''}</span>
+      <button class="event-block-del" data-del="${ev.id}" style="z-index:13">×</button>
     `;
     container.appendChild(block);
+    drawEventWaveform(block.querySelector('canvas'), ev);
     block.addEventListener('click', e => {
-      if (e.target.dataset.del) return;
+      if (e.target.dataset.del || e.target.dataset.trim) return;
       state.selectedKind = 'event';
       state.selectedId = ev.id;
       state.activeTrackId = track.id;
@@ -1941,7 +1958,110 @@ function renderEventsInTrack(container, track) {
     });
     block.querySelector('.event-block-del').addEventListener('click', e => { e.stopPropagation(); deleteEvent(ev.id); });
     makeEventDraggable(block, ev, track);
+    setupEventTrim(block, ev);
   });
+}
+
+function drawEventWaveform(canvas, ev) {
+  if (!canvas) return;
+  const buf = state.padBuffers.get(ev.padId);
+  if (!buf) return;
+  const widthPx = Math.max(1, ev.duration * state.zoomPxPerSec);
+  const heightPx = 44; // hauteur du bloc
+  const dpr = window.devicePixelRatio || 1;
+  canvas.style.width = widthPx + 'px';
+  canvas.style.height = heightPx + 'px';
+  canvas.width = widthPx * dpr;
+  canvas.height = heightPx * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.scale(dpr, dpr);
+  const data = buf.getChannelData(0);
+  const sampleStart = Math.floor((ev.sourceStart ?? 0) * buf.sampleRate);
+  const sampleEnd = Math.floor((ev.sourceEnd ?? buf.duration) * buf.sampleRate);
+  const sampleRange = sampleEnd - sampleStart;
+  if (sampleRange <= 0) return;
+  const samplesPerPx = sampleRange / widthPx;
+  const mid = heightPx / 2;
+  ctx.fillStyle = '#ffffff';
+  for (let x = 0; x < widthPx; x++) {
+    const s = sampleStart + Math.floor(x * samplesPerPx);
+    const e = sampleStart + Math.floor((x + 1) * samplesPerPx);
+    let mn = 1, mx = -1;
+    for (let i = s; i < e && i < data.length; i++) {
+      const v = data[i] || 0;
+      if (v < mn) mn = v;
+      if (v > mx) mx = v;
+    }
+    const y1 = mid + mn * mid * 0.85;
+    const y2 = mid + mx * mid * 0.85;
+    ctx.fillRect(x, y1, 1, Math.max(1, y2 - y1));
+  }
+}
+
+// Rognage des events : drag sur la poignée gauche modifie sourceStart, droite modifie sourceEnd.
+// Le bloc se redimensionne en gardant la position absolue du début (gauche) ou de la fin (droite).
+function setupEventTrim(block, ev) {
+  const leftH = block.querySelector('.event-trim-handle.left');
+  const rightH = block.querySelector('.event-trim-handle.right');
+  const buf = state.padBuffers.get(ev.padId);
+  const fullDur = buf ? buf.duration : ev.duration;
+
+  function setupHandle(handle, side) {
+    let startX, origStart, origEnd, origTime, origDuration;
+    function onDown(e) {
+      if (e.button !== undefined && e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      ensureEventTrim(ev);
+      startX = e.clientX;
+      origStart = ev.sourceStart;
+      origEnd = ev.sourceEnd;
+      origTime = ev.time;
+      origDuration = ev.duration;
+      handle.classList.add('active');
+      state.selectedKind = 'event';
+      state.selectedId = ev.id;
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    }
+    function onMove(e) {
+      const dx = e.clientX - startX;
+      const dt = dx / state.zoomPxPerSec;
+      const minLen = 0.05; // longueur minimale en secondes
+      if (side === 'left') {
+        // Rogner du début : sourceStart augmente (dt > 0) ou diminue (dt < 0)
+        let newStart = Math.max(0, Math.min(origEnd - minLen, origStart + dt));
+        ev.sourceStart = newStart;
+        const newDuration = ev.sourceEnd - ev.sourceStart;
+        // Décaler time pour que la fin du bloc reste au même endroit
+        ev.time = Math.max(0, origTime + (newStart - origStart));
+        ev.duration = newDuration;
+      } else {
+        // Rogner de la fin : sourceEnd
+        let newEnd = Math.min(fullDur, Math.max(origStart + minLen, origEnd + dt));
+        ev.sourceEnd = newEnd;
+        ev.duration = ev.sourceEnd - ev.sourceStart;
+      }
+      // Mettre à jour visuellement le bloc
+      block.style.left = (ev.time * state.zoomPxPerSec) + 'px';
+      block.style.width = Math.max(20, ev.duration * state.zoomPxPerSec) + 'px';
+      const canvas = block.querySelector('canvas');
+      if (canvas) drawEventWaveform(canvas, ev);
+      recomputeDuration();
+    }
+    function onUp() {
+      handle.classList.remove('active');
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      const trimmed = (origStart !== ev.sourceStart) || (origEnd !== ev.sourceEnd);
+      if (trimmed) pushHistory();
+      renderTimeline();
+    }
+    handle.addEventListener('mousedown', onDown);
+  }
+  setupHandle(leftH, 'left');
+  setupHandle(rightH, 'right');
 }
 
 function makeEventDraggable(block, ev, track) {
@@ -2434,6 +2554,7 @@ function scheduleClipPlayback(clip, startAt, channelVol) {
 }
 
 function scheduleEventPlayback(ev, buf, startAt, channelVol) {
+  ensureEventTrim(ev);
   const ctx = state.audioCtx;
   const src = ctx.createBufferSource();
   src.buffer = buf;
@@ -2443,12 +2564,12 @@ function scheduleEventPlayback(ev, buf, startAt, channelVol) {
   let when, bufferOffset, playDur;
   if (ev.time >= startAt) {
     when = now + (ev.time - startAt);
-    bufferOffset = 0;
+    bufferOffset = ev.sourceStart;
     playDur = ev.duration;
   } else {
     when = now;
     const skip = startAt - ev.time;
-    bufferOffset = skip;
+    bufferOffset = ev.sourceStart + skip;
     playDur = ev.duration - skip;
   }
   applyFadesGain(g, when, playDur, ev.fadeIn || 0, ev.fadeOut || 0, baseVol);
@@ -2565,6 +2686,7 @@ async function exportMix() {
       } else if (track.type === 'events') {
         for (const ev of track.events) {
           if (ev.muted) continue;
+          ensureEventTrim(ev);
           const buf = state.padBuffers.get(ev.padId);
           if (!buf) continue;
           const src = offlineCtx.createBufferSource();
@@ -2573,7 +2695,7 @@ async function exportMix() {
           const baseVol = trackVol * (ev.volume ?? 1);
           applyFadesGainOffline(g, ev.time, ev.duration, ev.fadeIn || 0, ev.fadeOut || 0, baseVol);
           src.connect(g); g.connect(offlineCtx.destination);
-          src.start(ev.time);
+          src.start(ev.time, ev.sourceStart, ev.duration);
         }
       }
     }
