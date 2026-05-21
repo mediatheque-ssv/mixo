@@ -13,6 +13,49 @@
   .subtitle { font-size: 13px; color: #8a91a0; margin-top: 2px; }
   .header-right { display: flex; gap: 8px; align-items: center; }
   .panel { background: #1c1f27; border: 1px solid #2a2f3a; border-radius: 12px; padding: 16px 20px; margin-bottom: 14px; }
+  .panel.pads-panel { display: flex; flex-direction: column; }
+  .panel.pads-panel #padsGrid { overflow-y: auto; }
+  /* Séparateur draggable vertical (entre pads et editor) */
+  .resizer-vertical {
+    height: 8px; margin: -7px auto 7px; max-width: 1200px; cursor: ns-resize;
+    background: transparent; border-radius: 4px; position: relative;
+    transition: background 0.15s;
+  }
+  .resizer-vertical::before {
+    content: ''; position: absolute; left: 50%; top: 50%;
+    transform: translate(-50%, -50%); width: 60px; height: 4px;
+    background: #2a2f3a; border-radius: 2px; transition: background 0.15s;
+  }
+  .resizer-vertical:hover { background: rgba(59, 130, 246, 0.08); }
+  .resizer-vertical:hover::before, .resizer-vertical.dragging::before { background: #3b82f6; }
+  /* Layout 2 colonnes du editor : timeline + tiroir inspector */
+  .editor-main-row { display: grid; grid-template-columns: 1fr 0px; gap: 0; align-items: stretch; transition: grid-template-columns 0.2s; }
+  .editor-main-row.drawer-open { grid-template-columns: 1fr 320px; }
+  .editor-timeline-col { min-width: 0; }
+  .inspector-drawer {
+    background: #14161c; border-left: 1px solid #2a2f3a; border-radius: 0 8px 8px 0;
+    overflow: hidden; position: relative;
+  }
+  .editor-main-row:not(.drawer-open) .inspector-drawer { border-left: none; }
+  .drawer-toggle {
+    position: absolute; left: -28px; top: 12px; width: 26px; height: 40px;
+    background: #2a2f3a; border: 1px solid #3a4050; border-right: none;
+    border-radius: 6px 0 0 6px; color: #e8ebf0; cursor: pointer; font-size: 14px;
+    display: flex; align-items: center; justify-content: center; padding: 0;
+    z-index: 50; transition: background 0.15s;
+  }
+  .drawer-toggle:hover { background: #353b48; }
+  .editor-main-row:not(.drawer-open) .drawer-toggle {
+    left: auto; right: 4px; border-radius: 6px 0 0 6px; border: 1px solid #3a4050;
+  }
+  .inspector-drawer-content { padding: 14px; height: 100%; overflow-y: auto; box-sizing: border-box; }
+  /* Quand l'inspector est dans le tiroir, on adapte le layout (vertical) */
+  .inspector-drawer .inspector { background: transparent; border: none; padding: 0; margin: 0; }
+  .inspector-drawer .inspector.hidden { display: none; }
+  .inspector-drawer .inspector-header { flex-direction: column; align-items: stretch; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid #2a2f3a; margin-bottom: 12px; }
+  .inspector-drawer .inspector-controls { display: flex; flex-direction: column; gap: 14px; }
+  .inspector-drawer .inspector-control { width: 100%; }
+  .drawer-empty-msg { color: #8a91a0; font-size: 12px; text-align: center; padding: 40px 16px; line-height: 1.5; }
   .panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
   .panel-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; color: #8a91a0; font-weight: 600; }
   select, input[type="text"], input[type="number"] { background: #14161c; color: #e8ebf0; border: 1px solid #3a4050; border-radius: 8px; padding: 9px 12px; font-size: 14px; font-family: inherit; outline: none; transition: border-color 0.15s; }
@@ -48,7 +91,7 @@
   input[type="range"]::-moz-range-thumb { width: 16px; height: 16px; background: #3b82f6; border-radius: 50%; border: none; cursor: pointer; }
   .bank-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .bank-row select { flex: 1; min-width: 180px; }
-  .pads-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+  .pads-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; overflow-y: auto; padding-right: 4px; }
   .pad { aspect-ratio: 1; background: #2a2f3a; border: 1px solid #3a4050; border-radius: 10px; cursor: grab; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 8px; text-align: center; transition: transform 0.08s, box-shadow 0.15s; position: relative; user-select: none; color: #e8ebf0; font-size: 12px; font-family: inherit; overflow: hidden; }
   .pad:hover { box-shadow: 0 0 0 2px rgba(255,255,255,0.15); }
   .pad.playing { transform: scale(0.95); box-shadow: 0 0 0 2px rgba(255,255,255,0.5); }
@@ -293,7 +336,7 @@
   </div>
 </div>
 
-<div class="panel">
+<div class="panel pads-panel" id="padsPanel">
   <div class="panel-header">
     <div class="panel-title">Pads</div>
     <div class="bank-row">
@@ -305,6 +348,9 @@
   </div>
   <div id="padsGrid" class="pads-grid"></div>
 </div>
+
+<!-- Séparateur draggable entre la zone pads et la zone d'édition -->
+<div id="layoutResizer" class="resizer-vertical" title="Glisser pour redimensionner (double-clic pour réinitialiser)"></div>
 
 <!-- ÉDITEUR -->
 <div id="editorPanel" class="panel hidden">
@@ -339,73 +385,85 @@
     <button id="btnSelClear" style="margin-left:auto">Annuler la sélection</button>
   </div>
 
-  <div class="timeline-container" id="timelineContainer">
-    <div class="timeline-inner" id="timelineInner">
-      <div id="timelineRuler" class="timeline-ruler"></div>
-      <div id="tracksWrapper"></div>
-      <div id="voiceSelection" class="voice-selection"></div>
-      <div id="playhead" class="playhead"></div>
-    </div>
-  </div>
+  <div class="editor-main-row" id="editorMainRow">
+    <div class="editor-timeline-col">
+      <div class="timeline-container" id="timelineContainer">
+        <div class="timeline-inner" id="timelineInner">
+          <div id="timelineRuler" class="timeline-ruler"></div>
+          <div id="tracksWrapper"></div>
+          <div id="voiceSelection" class="voice-selection"></div>
+          <div id="playhead" class="playhead"></div>
+        </div>
+      </div>
 
-  <div class="add-track-bar">
-    <span style="font-size: 12px; color: #8a91a0;">Ajouter une piste :</span>
-    <button id="btnAddVoiceTrack">🎤 Voix</button>
-    <button id="btnAddEventsTrack">🎵 Bruitages</button>
-  </div>
+      <div class="add-track-bar">
+        <span style="font-size: 12px; color: #8a91a0;">Ajouter une piste :</span>
+        <button id="btnAddVoiceTrack">🎤 Voix</button>
+        <button id="btnAddEventsTrack">🎵 Bruitages</button>
+      </div>
 
-  <div id="inspectorPanel" class="inspector hidden">
-    <div class="inspector-header">
-      <div class="inspector-swatch" id="inspectorSwatch"></div>
-      <div class="inspector-name" id="inspectorName">—</div>
-      <div class="inspector-time" id="inspectorTime"></div>
-      <button id="btnNormalizeItem" class="icon-only" title="Normaliser ce clip">🔊</button>
-      <button id="btnDuplicateEvent" class="icon-only" title="Dupliquer">⧉</button>
-      <button id="btnMuteEvent" class="icon-only" title="Muet">🔇</button>
-      <button id="btnDeleteEvent" class="icon-only" title="Supprimer">×</button>
-    </div>
-    <div class="inspector-controls">
-      <div class="inspector-control">
-        <div class="inspector-label"><span>Volume</span><span class="channel-value" id="evVolVal">100%</span></div>
-        <input type="range" id="evVol" min="0" max="200" value="100">
-      </div>
-      <div class="inspector-control">
-        <div class="inspector-label"><span>Fade in</span><span class="channel-value" id="evFadeInVal">0.0s</span></div>
-        <input type="range" id="evFadeIn" min="0" max="50" value="0">
-      </div>
-      <div class="inspector-control">
-        <div class="inspector-label"><span>Fade out</span><span class="channel-value" id="evFadeOutVal">0.0s</span></div>
-        <input type="range" id="evFadeOut" min="0" max="50" value="0">
+      <div class="editor-info">
+        <strong>Astuces :</strong> Glisse un pad de la grille vers la timeline pour l'ajouter. Sur un clip voix : <strong>glisse la barre bleue du haut</strong> pour le déplacer (Ctrl+glisser embarque les bruitages), <strong>clique-glisse sur le corps</strong> pour sélectionner une zone à éditer.
       </div>
     </div>
-  </div>
 
-  <!-- Inspector piste -->
-  <div id="trackInspectorPanel" class="inspector hidden">
-    <div class="inspector-header">
-      <div class="inspector-swatch" id="trackInspSwatch"></div>
-      <div class="inspector-name" id="trackInspName">—</div>
-      <span style="font-size:11px;color:#8a91a0;text-transform:uppercase;letter-spacing:0.4px;background:#0a0c10;padding:3px 8px;border-radius:4px;border:1px solid #2a2f3a">Piste</span>
-    </div>
-    <div class="inspector-controls">
-      <div class="inspector-control">
-        <div class="inspector-label"><span>Volume</span><span class="channel-value" id="trackInspVolVal">100%</span></div>
-        <input type="range" id="trackInspVol" min="0" max="400" value="100">
-      </div>
-      <div class="inspector-control" style="display:flex;flex-direction:column;gap:8px;justify-content:center">
-        <button id="btnNormalizeTrack" style="width:100%;justify-content:center">🔊 Normaliser la piste</button>
-        <button id="btnCompressTrack" style="width:100%;justify-content:center">🎙 Compression vocale</button>
-      </div>
-      <div class="inspector-control" style="display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap">
-        <button id="btnTrackInspMute" style="flex:1;justify-content:center">🔇 Muet</button>
-        <button id="btnTrackInspSolo" style="flex:1;justify-content:center">S Solo</button>
-        <button id="btnTrackInspDelete" class="danger" style="flex:1;justify-content:center">× Supprimer</button>
-      </div>
-    </div>
-  </div>
+    <div class="inspector-drawer" id="inspectorDrawer">
+      <button class="drawer-toggle" id="drawerToggle" title="Replier / déplier le panneau">‹</button>
+      <div class="inspector-drawer-content">
+        <div id="drawerEmpty" class="drawer-empty-msg">Sélectionne un clip, un bruitage ou une piste pour afficher ses propriétés ici.</div>
 
-  <div class="editor-info">
-    <strong>Astuces :</strong> Glisse un pad de la grille vers la timeline pour l'ajouter. Sur un clip voix : <strong>glisse la barre bleue du haut</strong> pour le déplacer (Ctrl+glisser embarque les bruitages), <strong>clique-glisse sur le corps</strong> pour sélectionner une zone à éditer.
+        <div id="inspectorPanel" class="inspector hidden">
+          <div class="inspector-header">
+            <div class="inspector-swatch" id="inspectorSwatch"></div>
+            <div class="inspector-name" id="inspectorName">—</div>
+            <div class="inspector-time" id="inspectorTime"></div>
+          </div>
+          <div class="inspector-controls">
+            <div class="inspector-control" style="display:flex;gap:6px;align-items:center;justify-content:flex-start;flex-wrap:wrap">
+              <button id="btnNormalizeItem" title="Normaliser ce clip">🔊 Normaliser</button>
+              <button id="btnDuplicateEvent" title="Dupliquer">⧉ Dupliquer</button>
+              <button id="btnMuteEvent" title="Muet">🔇</button>
+              <button id="btnDeleteEvent" class="danger" title="Supprimer">× Suppr.</button>
+            </div>
+            <div class="inspector-control">
+              <div class="inspector-label"><span>Volume</span><span class="channel-value" id="evVolVal">100%</span></div>
+              <input type="range" id="evVol" min="0" max="200" value="100">
+            </div>
+            <div class="inspector-control">
+              <div class="inspector-label"><span>Fade in</span><span class="channel-value" id="evFadeInVal">0.0s</span></div>
+              <input type="range" id="evFadeIn" min="0" max="50" value="0">
+            </div>
+            <div class="inspector-control">
+              <div class="inspector-label"><span>Fade out</span><span class="channel-value" id="evFadeOutVal">0.0s</span></div>
+              <input type="range" id="evFadeOut" min="0" max="50" value="0">
+            </div>
+          </div>
+        </div>
+
+        <div id="trackInspectorPanel" class="inspector hidden">
+          <div class="inspector-header">
+            <div class="inspector-swatch" id="trackInspSwatch"></div>
+            <div class="inspector-name" id="trackInspName">—</div>
+            <span style="font-size:11px;color:#8a91a0;text-transform:uppercase;letter-spacing:0.4px;background:#0a0c10;padding:3px 8px;border-radius:4px;border:1px solid #2a2f3a;display:inline-block;align-self:flex-start">Piste</span>
+          </div>
+          <div class="inspector-controls">
+            <div class="inspector-control">
+              <div class="inspector-label"><span>Volume</span><span class="channel-value" id="trackInspVolVal">100%</span></div>
+              <input type="range" id="trackInspVol" min="0" max="400" value="100">
+            </div>
+            <div class="inspector-control" style="display:flex;flex-direction:column;gap:8px;justify-content:center">
+              <button id="btnNormalizeTrack" style="width:100%;justify-content:center">🔊 Normaliser la piste</button>
+              <button id="btnCompressTrack" style="width:100%;justify-content:center">🎙 Compression vocale</button>
+            </div>
+            <div class="inspector-control" style="display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap">
+              <button id="btnTrackInspMute" style="flex:1;justify-content:center">🔇 Muet</button>
+              <button id="btnTrackInspSolo" style="flex:1;justify-content:center">S Solo</button>
+              <button id="btnTrackInspDelete" class="danger" style="flex:1;justify-content:center">× Supprimer</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -2218,11 +2276,16 @@ function deleteEvent(id) {
 function renderInspector() {
   const panel = document.getElementById('inspectorPanel');
   const trackPanel = document.getElementById('trackInspectorPanel');
+  const emptyMsg = document.getElementById('drawerEmpty');
   if (!state.selectedKind || !state.selectedId || !state.take) {
     panel.classList.add('hidden');
     trackPanel.classList.add('hidden');
+    if (emptyMsg) emptyMsg.style.display = '';
     return;
   }
+  // Quelque chose est sélectionné : auto-ouvrir le tiroir s'il était fermé
+  autoOpenDrawerIfNeeded();
+  if (emptyMsg) emptyMsg.style.display = 'none';
   // Cas : sélection d'une piste → afficher l'inspector piste
   if (state.selectedKind === 'track') {
     panel.classList.add('hidden');
@@ -4072,6 +4135,96 @@ document.addEventListener('keydown', e => {
 
 window.addEventListener('beforeunload', e => { if (state.isRecording) { e.preventDefault(); e.returnValue = ''; } });
 
+// ===================== Resizer + tiroir inspector =====================
+const STORAGE_PADS_HEIGHT = 'mixo.padsHeight';
+const STORAGE_DRAWER_OPEN = 'mixo.drawerOpen';
+const DEFAULT_PADS_HEIGHT = 240; // px, hauteur de la grille de pads par défaut
+const MIN_PADS_HEIGHT = 90;
+const MAX_PADS_HEIGHT = 800;
+
+function applyPadsHeight(h) {
+  const grid = document.getElementById('padsGrid');
+  if (!grid) return;
+  grid.style.maxHeight = h + 'px';
+  grid.style.minHeight = h + 'px';
+}
+function loadPadsHeight() {
+  const stored = parseInt(localStorage.getItem(STORAGE_PADS_HEIGHT) || '', 10);
+  const h = isFinite(stored) ? Math.min(MAX_PADS_HEIGHT, Math.max(MIN_PADS_HEIGHT, stored)) : DEFAULT_PADS_HEIGHT;
+  applyPadsHeight(h);
+}
+function setupLayoutResizer() {
+  const r = document.getElementById('layoutResizer');
+  if (!r) return;
+  const grid = document.getElementById('padsGrid');
+  let startY, startH;
+  function onDown(e) {
+    e.preventDefault();
+    r.classList.add('dragging');
+    startY = e.clientY;
+    startH = grid.offsetHeight;
+    document.body.style.cursor = 'ns-resize';
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
+  function onMove(e) {
+    const dy = e.clientY - startY;
+    let newH = startH + dy;
+    newH = Math.max(MIN_PADS_HEIGHT, Math.min(MAX_PADS_HEIGHT, newH));
+    applyPadsHeight(newH);
+  }
+  function onUp() {
+    r.classList.remove('dragging');
+    document.body.style.cursor = '';
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    localStorage.setItem(STORAGE_PADS_HEIGHT, String(grid.offsetHeight));
+  }
+  r.addEventListener('mousedown', onDown);
+  r.addEventListener('dblclick', () => {
+    applyPadsHeight(DEFAULT_PADS_HEIGHT);
+    localStorage.setItem(STORAGE_PADS_HEIGHT, String(DEFAULT_PADS_HEIGHT));
+  });
+}
+
+function applyDrawerOpen(open) {
+  const row = document.getElementById('editorMainRow');
+  const toggle = document.getElementById('drawerToggle');
+  if (!row || !toggle) return;
+  row.classList.toggle('drawer-open', open);
+  toggle.textContent = open ? '›' : '‹';
+  toggle.title = open ? 'Replier le panneau' : 'Déplier le panneau de propriétés';
+}
+function setupDrawerToggle() {
+  const toggle = document.getElementById('drawerToggle');
+  if (!toggle) return;
+  toggle.addEventListener('click', () => {
+    const row = document.getElementById('editorMainRow');
+    const willOpen = !row.classList.contains('drawer-open');
+    applyDrawerOpen(willOpen);
+    localStorage.setItem(STORAGE_DRAWER_OPEN, willOpen ? '1' : '0');
+    // Redraw timeline pour ajuster les largeurs
+    setTimeout(() => { if (state.take) renderTimeline(); }, 220);
+  });
+}
+function loadDrawerState() {
+  // Par défaut ouvert pour découvrir la fonctionnalité
+  const stored = localStorage.getItem(STORAGE_DRAWER_OPEN);
+  const open = stored === null ? true : stored === '1';
+  applyDrawerOpen(open);
+}
+
+// Ouvre le tiroir si quelque chose est sélectionné (utile pour ne pas rater l'info)
+function autoOpenDrawerIfNeeded() {
+  if (!state.selectedKind || !state.selectedId) return;
+  const row = document.getElementById('editorMainRow');
+  if (!row.classList.contains('drawer-open')) {
+    applyDrawerOpen(true);
+    localStorage.setItem(STORAGE_DRAWER_OPEN, '1');
+    setTimeout(() => { if (state.take) renderTimeline(); }, 220);
+  }
+}
+
 // ===================== AUTO-SAVE & NETTOYAGE =====================
 const AUTOSAVE_NAME_PREFIX = '💾 Auto — ';
 const AUTOSAVE_INTERVAL_MS = 30000;
@@ -4161,6 +4314,10 @@ async function offerResumeAutoSave() {
     await cleanupLegacyProjectBanks();
     await loadBanks();
     await listMics();
+    loadPadsHeight();
+    setupLayoutResizer();
+    setupDrawerToggle();
+    loadDrawerState();
     // Proposer la reprise après que tout soit prêt
     setTimeout(() => offerResumeAutoSave(), 500);
   } catch (e) {
