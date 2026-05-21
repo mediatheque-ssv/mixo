@@ -599,6 +599,7 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/lamejs/1.2.1/lame.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <script>
 'use strict';
@@ -3254,7 +3255,7 @@ async function exportMix() {
     showProgress('Conversion MP3…', 50);
     await new Promise(r => setTimeout(r, 50));
 
-    const kbps = 128;
+    const kbps = 192;
     const channels = rendered.numberOfChannels;
     const encoder = new lamejs.Mp3Encoder(channels, rendered.sampleRate, kbps);
     const mp3Data = [];
@@ -3717,10 +3718,12 @@ async function base64ToAudioBuffer(dataUrl) {
   return await state.audioCtx.decodeAudioData(ab);
 }
 
-async function buildProjectData(name) {
+// Construit un objet "métadonnées" du projet (tout SAUF l'audio brut).
+// Les buffers audio sont référencés par nom de fichier (voice_xxx.wav, pad_xxx.wav)
+// et stockés séparément en binaire dans le ZIP.
+async function buildProjectMetadata(name) {
   if (!state.take || !state.take.tracks || state.take.tracks.length === 0) throw new Error('Pas de prise à sauvegarder');
 
-  // Récolter tous les events et clips voix
   const allEvents = [];
   const allClips = [];
   for (const t of state.take.tracks) {
@@ -3728,9 +3731,7 @@ async function buildProjectData(name) {
     if (t.type === 'voice') allClips.push(...t.clips);
   }
 
-  // Récolter les pads à embarquer :
-  // 1. tous les pads du projet (state.projectPads), même non utilisés sur la timeline
-  // 2. tous les pads permanents référencés par des events (pour portabilité)
+  // Récolter les pads à embarquer
   const padsToEmbed = new Map();
   for (const p of state.projectPads) padsToEmbed.set(p.id, { pad: p, fromProject: true });
   const allDbPads = await dbGetAll(STORE_PADS);
@@ -3740,7 +3741,146 @@ async function buildProjectData(name) {
     if (p) padsToEmbed.set(ev.padId, { pad: p, fromProject: false });
   }
 
-  // Encoder chaque pad embarqué
+  // Liste des pads (sans audio inline, juste le nom de fichier dans le ZIP)
+  const pads = [];
+  // Map padId → AudioBuffer pour pouvoir écrire les fichiers WAV ensuite
+  const padBuffers = new Map();
+  for (const { pad, fromProject } of padsToEmbed.values()) {
+    let buf = state.padBuffers.get(pad.id);
+    if (!buf && pad.blob) {
+      try {
+        const ab = await pad.blob.arrayBuffer();
+        buf = await state.audioCtx.decodeAudioData(ab.slice(0));
+        state.padBuffers.set(pad.id, buf);
+      } catch (e) { console.warn('Decode failed for pad', pad.name, e); continue; }
+    }
+    if (!buf) continue;
+    padBuffers.set(pad.id, buf);
+    pads.push({
+      id: pad.id, name: pad.name, color: pad.color, loop: pad.loop, duration: pad.duration,
+      audioFile: `pads/${pad.id}.wav`,
+      fromProject,
+    });
+  }
+
+  // Liste des buffers voix (avec référence vers le fichier WAV dans le ZIP)
+  const usedBufferIds = [...new Set(allClips.map(c => c.bufferId).filter(Boolean))];
+  const voiceBuffers = {};
+  const voiceBuffersMap = new Map(); // bufferId → AudioBuffer
+  for (const bid of usedBufferIds) {
+    const buf = state.take.voiceBuffers[bid];
+    if (!buf) continue;
+    voiceBuffersMap.set(bid, buf);
+    voiceBuffers[bid] = {
+      audioFile: `voice/${bid}.wav`,
+      sampleRate: buf.sampleRate,
+      duration: buf.duration,
+    };
+  }
+
+  return {
+    metadata: {
+      format: 'mixo',
+      version: 4,    // v4 : format ZIP avec fichiers WAV séparés
+      name: name || 'Projet sans nom',
+      createdAt: new Date().toISOString(),
+      voiceBuffers,
+      tracks: state.take.tracks,
+      duration: state.take.duration,
+      pads,
+    },
+    padBuffers,
+    voiceBuffersMap,
+  };
+}
+
+// Construit le projet sous forme de Blob ZIP (nouveau format v4).
+async function buildProjectZip(name) {
+  if (typeof JSZip === 'undefined') throw new Error('JSZip non chargé');
+  const { metadata, padBuffers, voiceBuffersMap } = await buildProjectMetadata(name);
+  const zip = new JSZip();
+  // metadata.json
+  zip.file('metadata.json', JSON.stringify(metadata));
+  // Pads en WAV binaire
+  for (const [padId, buf] of padBuffers) {
+    const wavBytes = audioBufferToWavBytes(buf);
+    zip.file(`pads/${padId}.wav`, wavBytes);
+  }
+  // Voice buffers en WAV binaire
+  for (const [bid, buf] of voiceBuffersMap) {
+    const wavBytes = audioBufferToWavBytes(buf);
+    zip.file(`voice/${bid}.wav`, wavBytes);
+  }
+  // Génère un blob ZIP avec deflate (compression standard)
+  const blob = await zip.generateAsync({
+    type: 'blob',
+    compression: 'DEFLATE',
+    compressionOptions: { level: 6 }, // niveau standard, bon compromis vitesse/compression
+  });
+  return { blob, metadata };
+}
+
+// Encode un AudioBuffer en bytes WAV (Uint8Array) PCM 16-bit
+function audioBufferToWavBytes(buf) {
+  const numChannels = buf.numberOfChannels;
+  const sampleRate = buf.sampleRate;
+  const length = buf.length;
+  const bytesPerSample = 2;
+  const blockAlign = numChannels * bytesPerSample;
+  const byteRate = sampleRate * blockAlign;
+  const dataSize = length * blockAlign;
+  const headerSize = 44;
+  const totalSize = headerSize + dataSize;
+  const buffer = new ArrayBuffer(totalSize);
+  const view = new DataView(buffer);
+  let offset = 0;
+  function writeStr(s) { for (let i = 0; i < s.length; i++) view.setUint8(offset++, s.charCodeAt(i)); }
+  function writeU32(v) { view.setUint32(offset, v, true); offset += 4; }
+  function writeU16(v) { view.setUint16(offset, v, true); offset += 2; }
+  writeStr('RIFF');
+  writeU32(totalSize - 8);
+  writeStr('WAVE');
+  writeStr('fmt ');
+  writeU32(16);
+  writeU16(1);
+  writeU16(numChannels);
+  writeU32(sampleRate);
+  writeU32(byteRate);
+  writeU16(blockAlign);
+  writeU16(16);
+  writeStr('data');
+  writeU32(dataSize);
+  // Interleaved PCM 16-bit
+  const channels = [];
+  for (let c = 0; c < numChannels; c++) channels.push(buf.getChannelData(c));
+  for (let i = 0; i < length; i++) {
+    for (let c = 0; c < numChannels; c++) {
+      let s = Math.max(-1, Math.min(1, channels[c][i] || 0));
+      s = s < 0 ? s * 0x8000 : s * 0x7fff;
+      view.setInt16(offset, s, true); offset += 2;
+    }
+  }
+  return new Uint8Array(buffer);
+}
+
+// Construit un objet JSON "ancien format" (v3) pour rétro-compatibilité (utilisé si JSZip indispo)
+async function buildProjectData(name) {
+  if (!state.take || !state.take.tracks || state.take.tracks.length === 0) throw new Error('Pas de prise à sauvegarder');
+
+  const allEvents = [];
+  const allClips = [];
+  for (const t of state.take.tracks) {
+    if (t.type === 'events') allEvents.push(...t.events);
+    if (t.type === 'voice') allClips.push(...t.clips);
+  }
+  const padsToEmbed = new Map();
+  for (const p of state.projectPads) padsToEmbed.set(p.id, { pad: p, fromProject: true });
+  const allDbPads = await dbGetAll(STORE_PADS);
+  for (const ev of allEvents) {
+    if (padsToEmbed.has(ev.padId)) continue;
+    const p = allDbPads.find(p => p.id === ev.padId);
+    if (p) padsToEmbed.set(ev.padId, { pad: p, fromProject: false });
+  }
   const pads = [];
   for (const { pad, fromProject } of padsToEmbed.values()) {
     let buf = state.padBuffers.get(pad.id);
@@ -3753,54 +3893,38 @@ async function buildProjectData(name) {
     }
     if (!buf) continue;
     const dataUrl = await audioBufferToBase64Wav(buf);
-    pads.push({
-      id: pad.id, name: pad.name, color: pad.color, loop: pad.loop, duration: pad.duration,
-      audio: dataUrl,
-      fromProject, // permet à loadProjectData de savoir où le remettre
-    });
+    pads.push({ id: pad.id, name: pad.name, color: pad.color, loop: pad.loop, duration: pad.duration, audio: dataUrl, fromProject });
   }
-
-  // Audios voix utilisés
   const usedBufferIds = [...new Set(allClips.map(c => c.bufferId).filter(Boolean))];
   const voiceBuffers = {};
   for (const bid of usedBufferIds) {
     const buf = state.take.voiceBuffers[bid];
     if (!buf) continue;
-    voiceBuffers[bid] = {
-      audio: await audioBufferToBase64Wav(buf),
-      sampleRate: buf.sampleRate,
-      duration: buf.duration,
-    };
+    voiceBuffers[bid] = { audio: await audioBufferToBase64Wav(buf), sampleRate: buf.sampleRate, duration: buf.duration };
   }
-
-  return {
-    format: 'mixo',
-    version: 3,    // v3 : tracks multiples
-    name: name || 'Projet sans nom',
-    createdAt: new Date().toISOString(),
-    voiceBuffers,
-    tracks: state.take.tracks,
-    duration: state.take.duration,
-    pads,
-  };
+  return { format: 'mixo', version: 3, name: name || 'Projet sans nom', createdAt: new Date().toISOString(), voiceBuffers, tracks: state.take.tracks, duration: state.take.duration, pads };
 }
 
 async function saveProjectToDB(name) {
-  const data = await buildProjectData(name);
-  // Si on a déjà un currentProjectId (projet ouvert), on l'écrase avec le nouveau contenu
+  const { blob, metadata } = await buildProjectZip(name);
   const id = state.currentProjectId || uid('pr');
-  await dbPut(STORE_PROJECTS, { id, name: data.name, createdAt: data.createdAt, data });
+  await dbPut(STORE_PROJECTS, {
+    id,
+    name: metadata.name,
+    createdAt: metadata.createdAt,
+    zip: blob,
+    version: 4,
+  });
   state.currentProjectId = id;
-  showStatus(`Projet "${data.name}" sauvegardé`, 'success');
+  showStatus(`Projet "${metadata.name}" sauvegardé`, 'success');
   return id;
 }
 
 async function downloadProjectFile(name) {
-  const data = await buildProjectData(name);
-  const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+  const { blob, metadata } = await buildProjectZip(name);
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = (data.name || 'projet').replace(/[^a-zA-Z0-9 _-]/g, '_') + '.mixo';
+  a.href = url; a.download = (metadata.name || 'projet').replace(/[^a-zA-Z0-9 _-]/g, '_') + '.mixo';
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
   showStatus('Fichier .mixo téléchargé', 'success');
@@ -3811,12 +3935,23 @@ async function loadProjectData(data) {
 
   ensureAudioCtx();
 
+  // Helper : décode un AudioBuffer depuis soit _audioBytes (Uint8Array WAV) soit audio (base64)
+  async function decodeFromInfo(info) {
+    if (info._audioBytes) {
+      const ab = info._audioBytes.buffer.slice(info._audioBytes.byteOffset, info._audioBytes.byteOffset + info._audioBytes.byteLength);
+      return await state.audioCtx.decodeAudioData(ab);
+    } else if (info.audio) {
+      return await base64ToAudioBuffer(info.audio);
+    }
+    throw new Error("Pas d'audio dans cette entrée");
+  }
+
   // Décoder les buffers voix
   const voiceBuffers = {};
   let legacyVoiceClips = [];
   if (data.voiceBuffers) {
     for (const [bid, info] of Object.entries(data.voiceBuffers)) {
-      voiceBuffers[bid] = await base64ToAudioBuffer(info.audio);
+      voiceBuffers[bid] = await decodeFromInfo(info);
     }
   } else if (data.voice && data.voice.audio) {
     // Format v1 : un seul buffer
@@ -3858,7 +3993,7 @@ async function loadProjectData(data) {
     } else {
       // Nouveau pad : on le met dans state.projectPads (mémoire seulement, pas en IndexedDB)
       try {
-        const buf = await base64ToAudioBuffer(p.audio);
+        const buf = await decodeFromInfo(p);
         const padObj = {
           id: p.id, name: p.name, color: p.color, loop: p.loop, volume: 1,
           duration: p.duration,
@@ -3929,12 +4064,55 @@ async function loadProjectFromFile(file) {
     if (state.take && !document.getElementById('editorPanel').classList.contains('hidden')) {
       if (!(await confirmDiscardDraft('ouvres un autre projet'))) return;
     }
-    const text = await file.text();
-    const data = JSON.parse(text);
-    await loadProjectData(data);
+    // Détection du format : on lit les premiers octets pour voir si c'est un ZIP (signature "PK")
+    const firstBytes = await file.slice(0, 4).arrayBuffer();
+    const sig = new Uint8Array(firstBytes);
+    const isZip = sig[0] === 0x50 && sig[1] === 0x4B; // "PK" en hexadécimal
+    if (isZip) {
+      const data = await loadZipProject(file);
+      await loadProjectData(data);
+    } else {
+      // Ancien format JSON
+      const text = await file.text();
+      const data = JSON.parse(text);
+      await loadProjectData(data);
+    }
   } catch (e) {
     showStatus('Impossible d\'ouvrir ce fichier : ' + e.message, 'error');
   }
+}
+
+// Lit un blob ZIP v4 et reconstruit l'objet "data" attendu par loadProjectData,
+// avec les buffers décodés depuis les fichiers WAV inclus.
+async function loadZipProject(blob) {
+  if (typeof JSZip === 'undefined') throw new Error('JSZip non chargé');
+  const zip = await JSZip.loadAsync(blob);
+  const metadataFile = zip.file('metadata.json');
+  if (!metadataFile) throw new Error('metadata.json absent du fichier');
+  const metadataStr = await metadataFile.async('string');
+  const metadata = JSON.parse(metadataStr);
+  if (metadata.format !== 'mixo') throw new Error('Fichier non Mixo');
+
+  // Marquer les buffers audio dans l'objet metadata pour qu'on les retrouve plus loin.
+  // On stocke les Uint8Array directement sur les objets (pas de base64).
+  // loadProjectData saura les lire via la fonction décodage ad-hoc.
+  if (metadata.voiceBuffers) {
+    for (const [bid, info] of Object.entries(metadata.voiceBuffers)) {
+      if (info.audioFile) {
+        const f = zip.file(info.audioFile);
+        if (f) info._audioBytes = await f.async('uint8array');
+      }
+    }
+  }
+  if (Array.isArray(metadata.pads)) {
+    for (const p of metadata.pads) {
+      if (p.audioFile) {
+        const f = zip.file(p.audioFile);
+        if (f) p._audioBytes = await f.async('uint8array');
+      }
+    }
+  }
+  return metadata;
 }
 
 // === Modal sauvegarder ===
@@ -4022,8 +4200,17 @@ async function openProjectFromDB(id) {
     document.getElementById('loadProjectModal').classList.remove('visible');
     showProgress('Chargement du projet…', 30);
     try {
-      await loadProjectData(p.data);
-      // Si ce n'est pas une auto-save, on retient l'ID pour pouvoir l'écraser à la prochaine sauvegarde
+      let data;
+      if (p.zip && p.version >= 4) {
+        // Nouveau format : blob ZIP
+        data = await loadZipProject(p.zip);
+      } else if (p.data) {
+        // Ancien format : objet JSON
+        data = p.data;
+      } else {
+        throw new Error("Entrée projet inconnue");
+      }
+      await loadProjectData(data);
       if (!p.isAutoSave) state.currentProjectId = id;
     }
     catch (e) { showStatus('Erreur : ' + e.message, 'error'); }
@@ -4035,7 +4222,15 @@ async function downloadProjectFromDB(id) {
   const req = tx.objectStore(STORE_PROJECTS).get(id);
   req.onsuccess = () => {
     const p = req.result; if (!p) return;
-    const blob = new Blob([JSON.stringify(p.data)], { type: 'application/json' });
+    let blob;
+    if (p.zip && p.version >= 4) {
+      blob = p.zip; // déjà un Blob
+    } else if (p.data) {
+      blob = new Blob([JSON.stringify(p.data)], { type: 'application/json' });
+    } else {
+      showStatus('Projet illisible', 'error');
+      return;
+    }
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = (p.name || 'projet').replace(/[^a-zA-Z0-9 _-]/g, '_') + '.mixo';
@@ -4250,20 +4445,19 @@ async function cleanupLegacyProjectBanks() {
 
 function startAutoSave() {
   stopAutoSave();
-  // Un ID unique pour toute la durée de cette session d'édition
   if (!state.autoSaveProjectId) state.autoSaveProjectId = uid('autosave');
   state.autoSaveTimer = setInterval(async () => {
     if (!state.take) return;
     try {
-      const data = await buildProjectData(`session-${state.autoSaveProjectId}`);
-      // Nom lisible affiché à l'utilisateur dans la liste
       const ts = new Date().toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-      data.name = `${AUTOSAVE_NAME_PREFIX}${ts}`;
+      const name = `${AUTOSAVE_NAME_PREFIX}${ts}`;
+      const { blob, metadata } = await buildProjectZip(name);
       await dbPut(STORE_PROJECTS, {
         id: state.autoSaveProjectId,
-        name: data.name,
-        createdAt: data.createdAt,
-        data,
+        name,
+        createdAt: metadata.createdAt,
+        zip: blob,
+        version: 4,
         isAutoSave: true,
       });
     } catch (e) {
@@ -4298,11 +4492,20 @@ async function offerResumeAutoSave() {
   const ok = confirm(`Une session non sauvegardée du ${date} est disponible.\n\nReprendre ?`);
   if (ok) {
     showProgress('Reprise de la session…', 30);
-    try { await loadProjectData(lastAutoSave.data); }
+    try {
+      let data;
+      if (lastAutoSave.zip && lastAutoSave.version >= 4) {
+        data = await loadZipProject(lastAutoSave.zip);
+      } else if (lastAutoSave.data) {
+        data = lastAutoSave.data;
+      } else {
+        throw new Error("Entrée auto-save illisible");
+      }
+      await loadProjectData(data);
+    }
     catch (e) { showStatus('Erreur : ' + e.message, 'error'); }
     finally { hideProgress(); }
   } else {
-    // L'utilisateur refuse : on supprime l'auto-save pour ne plus la proposer
     await dbDelete(STORE_PROJECTS, lastAutoSave.id);
   }
 }
