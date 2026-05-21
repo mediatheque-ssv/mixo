@@ -1199,7 +1199,7 @@ function setupPadInteraction(el, pad) {
 }
 
 function addPadToTimeline(padId, time, targetTrackId) {
-  const pad = state.pads.find(p => p.id === padId);
+  const pad = findAnyPad(padId);
   const buf = state.padBuffers.get(padId);
   if (!pad || !buf || !state.take) return;
   // Choisir la piste : trackId explicite si fourni, sinon piste active de type events, sinon première
@@ -1308,7 +1308,7 @@ async function updatePad(id, changes) {
 
 function triggerPad(id, opts) {
   opts = opts || {};
-  const pad = state.pads.find(p => p.id === id);
+  const pad = findAnyPad(id);
   const buf = state.padBuffers.get(id);
   if (!pad || !buf) return;
 
