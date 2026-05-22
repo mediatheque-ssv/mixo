@@ -169,13 +169,13 @@
   .timeline-track.drop-target .track-content { box-shadow: inset 0 0 0 2px #3b82f6; }
   .voice-clip.dragging-cross-track, .event-block.dragging-cross-track { pointer-events: none; opacity: 0.85; box-shadow: 0 4px 16px rgba(0,0,0,0.6), inset 0 0 0 2px #fff !important; z-index: 50; }
   .timeline-track:last-child { border-bottom: none; }
-  .timeline-track.voice-track { height: 90px; background: #0a0c10; }
-  .timeline-track.events-track { height: 80px; background: #0d1015; }
+  .timeline-track.voice-track { height: 120px; background: #0a0c10; }
+  .timeline-track.events-track { height: 110px; background: #0d1015; }
   /* Bande latérale (header) de chaque piste */
   .track-head {
     position: sticky; left: 0; top: 0; height: 100%;
     width: 150px; background: #14161c; border-right: 2px solid #2a2f3a;
-    z-index: 15; padding: 6px 8px; display: flex; flex-direction: column; gap: 4px;
+    z-index: 15; padding: 5px 7px; display: flex; flex-direction: column; gap: 2px;
     font-size: 11px; box-sizing: border-box; flex-shrink: 0;
   }
   .track-head.active { background: #1d2535; box-shadow: inset 3px 0 0 #fbbf24; }
@@ -494,29 +494,6 @@
       </div>
     </div>
   </div>
-
-  <div id="trackInspectorPanel" class="inspector hidden">
-    <div class="inspector-header">
-      <div class="inspector-swatch" id="trackInspSwatch"></div>
-      <div class="inspector-name" id="trackInspName">—</div>
-      <span style="font-size:11px;color:#8a91a0;text-transform:uppercase;letter-spacing:0.4px;background:#0a0c10;padding:3px 8px;border-radius:4px;border:1px solid #2a2f3a;display:inline-block;align-self:flex-start">Piste</span>
-    </div>
-    <div class="inspector-controls">
-      <div class="inspector-control">
-        <div class="inspector-label"><span>Volume</span><span class="channel-value" id="trackInspVolVal">100%</span></div>
-        <input type="range" id="trackInspVol" min="0" max="400" value="100">
-      </div>
-      <div class="inspector-control" style="display:flex;flex-direction:column;gap:8px;justify-content:center">
-        <button id="btnNormalizeTrack" style="width:100%;justify-content:center">🔊 Normaliser la piste</button>
-        <button id="btnCompressTrack" style="width:100%;justify-content:center">🎙 Compression vocale</button>
-      </div>
-      <div class="inspector-control" style="display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap">
-        <button id="btnTrackInspMute" style="flex:1;justify-content:center">🔇 Muet</button>
-        <button id="btnTrackInspSolo" style="flex:1;justify-content:center">S Solo</button>
-        <button id="btnTrackInspDelete" class="danger" style="flex:1;justify-content:center">× Supprimer</button>
-      </div>
-    </div>
-  </div>
 </div>
 
 <!-- Exports finalisés -->
@@ -666,7 +643,7 @@ const STORE_BANKS = 'banks';
 const STORE_PADS = 'pads';
 const STORE_PROJECTS = 'projects';
 const SNAP_THRESHOLD = 0.15; // 150ms en secondes pour l'aimantation entre clips voix
-const VOICE_TRACK_HEIGHT = 90;
+const VOICE_TRACK_HEIGHT = 120;
 
 const state = {
   audioCtx: null,
@@ -2093,6 +2070,10 @@ function renderTracks(w) {
         <input type="range" min="0" max="400" value="${Math.round((track.volume ?? 1) * 100)}" data-track-vol="${track.id}">
         <span style="min-width:28px;text-align:right">${Math.round((track.volume ?? 1) * 100)}%</span>
       </div>
+      <div class="track-head-row" style="gap:3px;margin-top:2px">
+        <button class="track-mini-btn" data-normalize="${track.id}" title="Normaliser la piste" style="flex:1;padding:3px 4px;font-size:10px">🔊 Norm.</button>
+        <button class="track-mini-btn ${track.compressed ? 'active' : ''}" data-compress="${track.id}" title="Compression vocale" style="flex:1;padding:3px 4px;font-size:10px">🎙 ${track.compressed ? 'Comp ON' : 'Comp'}</button>
+      </div>
     `;
     trackEl.appendChild(head);
 
@@ -2112,8 +2093,11 @@ function renderTracks(w) {
       if (e.target.closest('button')) return;
       if (e.target.closest('input')) return;
       state.activeTrackId = track.id;
-      state.selectedKind = 'track';
-      state.selectedId = track.id;
+      // Désélectionne clip/event s'il y en avait (et ferme la popup)
+      if (state.selectedKind && state.selectedKind !== 'track') {
+        state.selectedKind = null;
+        state.selectedId = null;
+      }
       renderTimeline();
     });
 
@@ -2137,6 +2121,16 @@ function renderTracks(w) {
     head.querySelector(`[data-delete-track="${track.id}"]`).addEventListener('click', e => {
       e.stopPropagation();
       deleteTrack(track.id);
+    });
+    const normBtn = head.querySelector(`[data-normalize="${track.id}"]`);
+    if (normBtn) normBtn.addEventListener('click', async e => {
+      e.stopPropagation();
+      await normalizeTrack(track.id);
+    });
+    const compBtn = head.querySelector(`[data-compress="${track.id}"]`);
+    if (compBtn) compBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      toggleTrackCompression(track.id);
     });
     const volSlider = head.querySelector(`[data-track-vol="${track.id}"]`);
     volSlider.addEventListener('input', e => {
@@ -2750,10 +2744,8 @@ function deleteEvent(id) {
 // === Inspector ===
 function renderInspector() {
   const panel = document.getElementById('inspectorPanel');
-  const trackPanel = document.getElementById('trackInspectorPanel');
-  if (!state.selectedKind || !state.selectedId || !state.take) {
+  if (!state.selectedKind || !state.selectedId || state.selectedKind === 'track' || !state.take) {
     panel.classList.add('hidden');
-    trackPanel.classList.add('hidden');
     hideFloatingInspector();
     return;
   }
@@ -2763,25 +2755,6 @@ function renderInspector() {
     state.inspectorDismissedFor = null;
     showFloatingInspector();
   }
-  // Cas : sélection d'une piste → afficher l'inspector piste
-  if (state.selectedKind === 'track') {
-    panel.classList.add('hidden');
-    const track = findTrack(state.selectedId);
-    if (!track) { trackPanel.classList.add('hidden'); return; }
-    trackPanel.classList.remove('hidden');
-    document.getElementById('trackInspSwatch').style.background = track.color;
-    document.getElementById('trackInspName').textContent = (track.type === 'voice' ? '🎤 ' : '🎵 ') + track.name + (track.muted ? ' (muet)' : '') + (track.solo ? ' (solo)' : '');
-    const volPct = Math.round((track.volume ?? 1) * 100);
-    document.getElementById('trackInspVol').value = volPct;
-    document.getElementById('trackInspVolVal').textContent = volPct + '%';
-    const compBtn = document.getElementById('btnCompressTrack');
-    compBtn.textContent = track.compressed ? '🎙 Compression : ACTIVE' : '🎙 Compression vocale';
-    compBtn.classList.toggle('primary', !!track.compressed);
-    document.getElementById('btnTrackInspMute').classList.toggle('primary', !!track.muted);
-    document.getElementById('btnTrackInspSolo').classList.toggle('primary', !!track.solo);
-    return;
-  }
-  trackPanel.classList.add('hidden');
   let item, label, color;
   if (state.selectedKind === 'event') {
     const found = findEventById(state.selectedId);
@@ -2920,49 +2893,6 @@ document.getElementById('btnNormalizeItem').addEventListener('click', () => {
   if (!state.selectedKind || !state.selectedId) return;
   if (state.selectedKind === 'track') return;
   normalizeClipOrEvent(state.selectedId, state.selectedKind);
-});
-
-// === Inspector piste : bindings ===
-document.getElementById('trackInspVol').addEventListener('input', e => {
-  if (state.selectedKind !== 'track') return;
-  const track = findTrack(state.selectedId); if (!track) return;
-  const v = parseInt(e.target.value);
-  track.volume = v / 100;
-  document.getElementById('trackInspVolVal').textContent = v + '%';
-  // Mise à jour visuelle des sliders dans les headers de piste
-  const headSlider = document.querySelector(`[data-track-vol="${track.id}"]`);
-  if (headSlider) {
-    headSlider.value = v;
-    if (headSlider.nextElementSibling) headSlider.nextElementSibling.textContent = v + '%';
-  }
-  refreshWaveformsOfTrack(track);
-});
-document.getElementById('trackInspVol').addEventListener('change', () => pushHistory());
-document.getElementById('btnNormalizeTrack').addEventListener('click', async () => {
-  if (state.selectedKind !== 'track') return;
-  await normalizeTrack(state.selectedId);
-});
-document.getElementById('btnCompressTrack').addEventListener('click', () => {
-  if (state.selectedKind !== 'track') return;
-  toggleTrackCompression(state.selectedId);
-});
-document.getElementById('btnTrackInspMute').addEventListener('click', () => {
-  if (state.selectedKind !== 'track') return;
-  const track = findTrack(state.selectedId); if (!track) return;
-  track.muted = !track.muted;
-  pushHistory();
-  renderTimeline();
-});
-document.getElementById('btnTrackInspSolo').addEventListener('click', () => {
-  if (state.selectedKind !== 'track') return;
-  const track = findTrack(state.selectedId); if (!track) return;
-  track.solo = !track.solo;
-  pushHistory();
-  renderTimeline();
-});
-document.getElementById('btnTrackInspDelete').addEventListener('click', () => {
-  if (state.selectedKind !== 'track') return;
-  deleteTrack(state.selectedId);
 });
 
 // === Zoom et playhead ===
@@ -4847,7 +4777,6 @@ document.addEventListener('keydown', e => {
     if (state.selectedKind && state.selectedId) {
       if (state.selectedKind === 'event') deleteEvent(state.selectedId);
       else if (state.selectedKind === 'voice') removeVoiceClip(state.selectedId);
-      else if (state.selectedKind === 'track') deleteTrack(state.selectedId);
       return;
     }
   }
@@ -4940,26 +4869,27 @@ function positionFloatingInspectorNearSelection() {
   } else if (state.selectedKind === 'track') {
     selEl = document.querySelector(`.track-head[data-track-id="${state.selectedId}"]`);
   }
-  // Sinon, position par défaut en haut à droite du viewport
-  const margin = 16;
+  const margin = 8;
   const fpRect = fp.getBoundingClientRect();
   let left, top;
   if (selEl) {
     const r = selEl.getBoundingClientRect();
-    // Tenter à droite de la sélection
-    left = r.right + margin;
-    top = r.top;
-    // Si déborde à droite, mettre à gauche
+    // Position : centré horizontalement sur l'élément, juste au-dessus
+    left = r.left + (r.width - fpRect.width) / 2;
+    top = r.top - fpRect.height - margin;
+    // Si déborde en haut, on met en dessous à la place
+    if (top < margin) {
+      top = r.bottom + margin;
+      // Si déborde aussi en bas, on plaque au plus haut
+      if (top + fpRect.height > window.innerHeight - margin) {
+        top = margin;
+      }
+    }
+    // Garder dans le viewport horizontalement
+    if (left < margin) left = margin;
     if (left + fpRect.width > window.innerWidth - margin) {
-      left = r.left - fpRect.width - margin;
+      left = window.innerWidth - fpRect.width - margin;
     }
-    // Si déborde encore à gauche, mettre à droite contre le bord
-    if (left < margin) left = window.innerWidth - fpRect.width - margin;
-    // S'assurer que ne déborde pas en haut/bas
-    if (top + fpRect.height > window.innerHeight - margin) {
-      top = window.innerHeight - fpRect.height - margin;
-    }
-    if (top < margin) top = margin;
   } else {
     left = window.innerWidth - fpRect.width - margin;
     top = margin;
