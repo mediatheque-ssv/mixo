@@ -939,24 +939,72 @@ function startVuMeter() {
   const canvas = document.getElementById('waveformLive');
   const ctx = canvas.getContext('2d');
   const buf = new Uint8Array(state.micAnalyser.fftSize);
-  function resize() { canvas.width = canvas.clientWidth * window.devicePixelRatio; canvas.height = canvas.clientHeight * window.devicePixelRatio; }
+  function resize() {
+    canvas.width = canvas.clientWidth * window.devicePixelRatio;
+    canvas.height = canvas.clientHeight * window.devicePixelRatio;
+    // Reset l'historique au resize
+    state.liveWaveHistory = null;
+  }
   resize();
   window.addEventListener('resize', resize);
+
+  // Historique des amplitudes (une par frame). On dessine une barre par échantillon.
+  // Stockés en paire [min, max] de chaque frame pour des barres "verticales" centrées.
+  state.liveWaveHistory = null;
+  let lastResetState = false;
+
   function loop() {
     state.micAnalyser.getByteTimeDomainData(buf);
-    let max = 0;
-    for (let i = 0; i < buf.length; i++) { const v = Math.abs(buf[i] - 128) / 128; if (v > max) max = v; }
-    bar.style.width = Math.min(100, max * 180) + '%';
+    // Min/Max sur la frame courante (donne l'amplitude crête-à-crête)
+    let mn = 255, mx = 0;
+    for (let i = 0; i < buf.length; i++) {
+      const v = buf[i];
+      if (v < mn) mn = v;
+      if (v > mx) mx = v;
+    }
+    // VU bar : amplitude max linéaire normalisée
+    const peak = Math.max(Math.abs(mn - 128), Math.abs(mx - 128)) / 128;
+    bar.style.width = Math.min(100, peak * 180) + '%';
+
     if (state.isRecording && !state.isPaused) {
       const W = canvas.width, H = canvas.height;
-      ctx.fillStyle = '#0a0c10'; ctx.fillRect(0, 0, W, H);
-      ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 2; ctx.beginPath();
-      const step = W / buf.length;
-      for (let i = 0; i < buf.length; i++) {
-        const x = i * step, y = (buf[i] / 255) * H;
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      // Initialiser ou réinitialiser l'historique au début d'un enregistrement
+      if (!state.liveWaveHistory || !lastResetState) {
+        state.liveWaveHistory = new Array(Math.ceil(W / 2)).fill(null).map(() => ({ mn: 128, mx: 128 }));
+        lastResetState = true;
       }
+      // Ajouter la frame courante à la fin de l'historique, dépiler à l'avant
+      state.liveWaveHistory.push({ mn, mx });
+      state.liveWaveHistory.shift();
+      // Dessiner
+      ctx.fillStyle = '#0a0c10';
+      ctx.fillRect(0, 0, W, H);
+      // Ligne médiane discrète
+      ctx.strokeStyle = '#1a1d24';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, H / 2);
+      ctx.lineTo(W, H / 2);
       ctx.stroke();
+      // Barres verticales (une par échantillon historique)
+      ctx.fillStyle = '#3b82f6';
+      const barWidth = 2;
+      const len = state.liveWaveHistory.length;
+      const step = W / len;
+      for (let i = 0; i < len; i++) {
+        const sample = state.liveWaveHistory[i];
+        const yTop = (sample.mx / 255) * H;
+        const yBot = (sample.mn / 255) * H;
+        const x = i * step;
+        // Couleur dynamique : rouge si proche du clipping (> 90%)
+        const amp = Math.max(Math.abs(sample.mn - 128), Math.abs(sample.mx - 128)) / 128;
+        if (amp > 0.9) ctx.fillStyle = '#ef4444';
+        else if (amp > 0.7) ctx.fillStyle = '#fbbf24';
+        else ctx.fillStyle = '#3b82f6';
+        ctx.fillRect(x, yTop, barWidth, Math.max(1, yBot - yTop));
+      }
+    } else {
+      lastResetState = false;
     }
     requestAnimationFrame(loop);
   }
