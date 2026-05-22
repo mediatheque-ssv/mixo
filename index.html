@@ -975,11 +975,13 @@ function startVuMeter() {
       const W = canvas.width, H = canvas.height;
       // Initialiser ou réinitialiser l'historique au début d'un enregistrement
       if (!state.liveWaveHistory || !lastResetState) {
-        state.liveWaveHistory = new Array(Math.ceil(W / 2)).fill(null).map(() => ({ mn: 128, mx: 128 }));
+        state.liveWaveHistory = new Array(Math.ceil(W / 2)).fill(null).map(() => ({ peak: 0 }));
         lastResetState = true;
       }
-      // Ajouter la frame courante à la fin de l'historique, dépiler à l'avant
-      state.liveWaveHistory.push({ mn, mx });
+      // Peak crête-à-crête normalisé 0..1
+      const peakNorm = Math.max(Math.abs(mn - 128), Math.abs(mx - 128)) / 128;
+      // Ajouter à l'historique
+      state.liveWaveHistory.push({ peak: peakNorm });
       state.liveWaveHistory.shift();
       // Dessiner
       ctx.fillStyle = '#0a0c10';
@@ -991,22 +993,23 @@ function startVuMeter() {
       ctx.moveTo(0, H / 2);
       ctx.lineTo(W, H / 2);
       ctx.stroke();
-      // Barres verticales (une par échantillon historique)
-      ctx.fillStyle = '#3b82f6';
+      // Barres verticales centrées sur la médiane, amplifiées visuellement
+      const VISUAL_GAIN = 2.5; // amplification purement visuelle (n'affecte pas l'audio)
       const barWidth = 2;
       const len = state.liveWaveHistory.length;
       const step = W / len;
+      const mid = H / 2;
       for (let i = 0; i < len; i++) {
-        const sample = state.liveWaveHistory[i];
-        const yTop = (sample.mx / 255) * H;
-        const yBot = (sample.mn / 255) * H;
-        const x = i * step;
-        // Couleur dynamique : rouge si proche du clipping (> 90%)
-        const amp = Math.max(Math.abs(sample.mn - 128), Math.abs(sample.mx - 128)) / 128;
-        if (amp > 0.9) ctx.fillStyle = '#ef4444';
-        else if (amp > 0.7) ctx.fillStyle = '#fbbf24';
+        const s = state.liveWaveHistory[i];
+        const amp = Math.min(1, s.peak * VISUAL_GAIN);
+        const halfH = amp * (H * 0.45); // 45% pour laisser un peu d'espace
+        if (halfH < 0.5) continue;
+        // Couleur selon amplitude RÉELLE (pas amplifiée), pour signaler le vrai clipping
+        if (s.peak > 0.9) ctx.fillStyle = '#ef4444';
+        else if (s.peak > 0.7) ctx.fillStyle = '#fbbf24';
         else ctx.fillStyle = '#3b82f6';
-        ctx.fillRect(x, yTop, barWidth, Math.max(1, yBot - yTop));
+        const x = i * step;
+        ctx.fillRect(x, mid - halfH, barWidth, halfH * 2);
       }
     } else {
       lastResetState = false;
