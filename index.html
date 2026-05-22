@@ -28,35 +28,34 @@
   }
   .resizer-vertical:hover { background: rgba(59, 130, 246, 0.08); }
   .resizer-vertical:hover::before, .resizer-vertical.dragging::before { background: #3b82f6; }
-  /* Layout 2 colonnes du editor : timeline + tiroir inspector */
-  .editor-main-row { display: grid; grid-template-columns: 1fr 0px; gap: 0; align-items: stretch; transition: grid-template-columns 0.2s; }
-  .editor-main-row.drawer-open { grid-template-columns: 1fr 320px; }
+  .editor-main-row { display: block; }
   .editor-timeline-col { min-width: 0; }
-  .inspector-drawer {
-    background: #14161c; border-left: 1px solid #2a2f3a; border-radius: 0 8px 8px 0;
-    overflow: visible; position: relative;
+  .inspector-floating {
+    position: fixed; z-index: 200;
+    background: #1c1f27; border: 1px solid #3a4050; border-radius: 10px;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.6), 0 4px 12px rgba(0,0,0,0.4);
+    width: 320px; max-height: 80vh; overflow-y: auto;
+    padding: 12px;
   }
-  .editor-main-row:not(.drawer-open) .inspector-drawer { border-left: none; background: transparent; }
-  .drawer-toggle {
-    position: absolute; left: -28px; top: 12px; width: 26px; height: 44px;
-    background: #2a2f3a; border: 1px solid #3a4050; border-right: none;
-    border-radius: 6px 0 0 6px; color: #e8ebf0; cursor: pointer; font-size: 16px;
-    display: flex; align-items: center; justify-content: center; padding: 0;
-    z-index: 50; transition: background 0.15s; font-weight: bold;
+  .inspector-floating[hidden] { display: none; }
+  .inspector-floating .inspector-drag-handle {
+    cursor: move; user-select: none;
+    padding: 6px 8px; margin: -12px -12px 12px;
+    background: #14161c; border-bottom: 1px solid #2a2f3a;
+    border-radius: 10px 10px 0 0;
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 11px; color: #8a91a0; text-transform: uppercase; letter-spacing: 0.4px;
   }
-  .drawer-toggle:hover { background: #3b82f6; }
-  .editor-main-row:not(.drawer-open) .drawer-toggle {
-    left: -28px; border-radius: 6px 0 0 6px; border: 1px solid #3a4050; border-right: none;
+  .inspector-floating .inspector-close {
+    background: transparent; border: none; color: #8a91a0; cursor: pointer;
+    font-size: 16px; line-height: 1; padding: 2px 6px; border-radius: 4px;
   }
-  .inspector-drawer-content { padding: 14px; height: 100%; overflow-y: auto; overflow-x: hidden; box-sizing: border-box; }
-  .editor-main-row:not(.drawer-open) .inspector-drawer-content { display: none; }
-  /* Quand l'inspector est dans le tiroir, on adapte le layout (vertical) */
-  .inspector-drawer .inspector { background: transparent; border: none; padding: 0; margin: 0; }
-  .inspector-drawer .inspector.hidden { display: none; }
-  .inspector-drawer .inspector-header { flex-direction: column; align-items: stretch; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid #2a2f3a; margin-bottom: 12px; }
-  .inspector-drawer .inspector-controls { display: flex; flex-direction: column; gap: 14px; }
-  .inspector-drawer .inspector-control { width: 100%; }
-  .drawer-empty-msg { color: #8a91a0; font-size: 12px; text-align: center; padding: 40px 16px; line-height: 1.5; }
+  .inspector-floating .inspector-close:hover { background: #2a2f3a; color: #e8ebf0; }
+  .inspector-floating .inspector { background: transparent; border: none; padding: 0; margin: 0; }
+  .inspector-floating .inspector.hidden { display: none; }
+  .inspector-floating .inspector-header { flex-direction: column; align-items: stretch; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid #2a2f3a; margin-bottom: 12px; }
+  .inspector-floating .inspector-controls { display: flex; flex-direction: column; gap: 14px; }
+  .inspector-floating .inspector-control { width: 100%; }
   .panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
   .panel-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; color: #8a91a0; font-weight: 600; }
   select, input[type="text"], input[type="number"] { background: #14161c; color: #e8ebf0; border: 1px solid #3a4050; border-radius: 8px; padding: 9px 12px; font-size: 14px; font-family: inherit; outline: none; transition: border-color 0.15s; }
@@ -101,8 +100,14 @@
   .pad-shortcut { position: absolute; top: 4px; left: 6px; font-size: 10px; color: rgba(255,255,255,0.7); font-weight: 600; background: rgba(0,0,0,0.3); padding: 1px 5px; border-radius: 4px; }
   .pad-name { font-weight: 500; line-height: 1.2; word-break: break-word; max-width: 100%; margin-top: 2px; }
   .pad-duration { font-size: 10px; color: rgba(255,255,255,0.7); margin-top: 4px; font-variant-numeric: tabular-nums; }
-  .pad-loop { position: absolute; bottom: 4px; left: 6px; font-size: 10px; color: #fff; background: rgba(0,0,0,0.4); padding: 1px 5px; border-radius: 4px; display: none; }
-  .pad.loop .pad-loop { display: block; }
+  .pad-loop {
+    position: absolute; bottom: 4px; left: 6px; font-size: 12px;
+    color: rgba(255,255,255,0.85); background: rgba(0,0,0,0.4);
+    width: 20px; height: 20px; border-radius: 50%;
+    display: none; align-items: center; justify-content: center;
+    line-height: 1;
+  }
+  .pad.loop .pad-loop { display: flex; }
   .pad-progress { position: absolute; bottom: 0; left: 0; height: 3px; background: rgba(255,255,255,0.6); width: 0%; }
   .pad-actions { position: absolute; top: 4px; right: 4px; display: none; gap: 2px; }
   .pad:hover .pad-actions { display: flex; }
@@ -130,6 +135,25 @@
   /* Pad favori : étoile pleine jaune, toujours visible */
   .pad-fav.is-active { color: #fbbf24; opacity: 1; }
   .pad-fav.is-active:hover { transform: scale(1.15); background: rgba(0,0,0,0.55); }
+
+  /* Menu déroulant actions banque */
+  .bank-menu-wrapper { position: relative; }
+  .bank-menu-dropdown {
+    position: absolute; top: calc(100% + 4px); right: 0;
+    background: #1c1f27; border: 1px solid #2a2f3a; border-radius: 8px;
+    padding: 6px; min-width: 180px; z-index: 80;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .bank-menu-dropdown[hidden] { display: none; }
+  .bank-menu-dropdown .menu-item {
+    background: transparent; border: none; padding: 8px 12px; text-align: left;
+    color: #e8ebf0; font-size: 13px; cursor: pointer; border-radius: 4px;
+    display: flex; align-items: center; gap: 8px; width: 100%;
+  }
+  .bank-menu-dropdown .menu-item:hover { background: #2a2f3a; }
+  .bank-menu-dropdown .menu-item:disabled { opacity: 0.4; cursor: not-allowed; }
+  .menu-separator { height: 1px; background: #2a2f3a; margin: 4px 0; }
   .pad.project-pad .pad-actions { right: 38px; }
 
   /* === ÉDITEUR === */
@@ -360,11 +384,17 @@
     <div class="panel-title">Pads</div>
     <div class="bank-row">
       <select id="bankSelect"></select>
-      <button id="btnNewBank" class="icon-only" title="Nouvelle banque">+</button>
-      <button id="btnRenameBank" class="icon-only" title="Renommer">✎</button>
-      <button id="btnDeleteBank" class="icon-only" title="Supprimer">🗑</button>
-      <button id="btnExportBank" class="icon-only" title="Exporter la banque">📤</button>
-      <button id="btnImportBank" class="icon-only" title="Importer une banque">📥</button>
+      <div class="bank-menu-wrapper">
+        <button id="btnBankMenu" class="icon-only" title="Actions banque" aria-haspopup="true">⋯</button>
+        <div id="bankMenuDropdown" class="bank-menu-dropdown" hidden>
+          <button id="btnNewBank" class="menu-item">+ Nouvelle banque</button>
+          <button id="btnRenameBank" class="menu-item">✎ Renommer</button>
+          <button id="btnDeleteBank" class="menu-item">🗑 Supprimer</button>
+          <div class="menu-separator"></div>
+          <button id="btnExportBank" class="menu-item">📤 Exporter</button>
+          <button id="btnImportBank" class="menu-item">📥 Importer</button>
+        </div>
+      </div>
     </div>
   </div>
   <div id="padsGrid" class="pads-grid"></div>
@@ -427,62 +457,63 @@
         <strong>Astuces :</strong> Glisse un pad de la grille vers la timeline pour l'ajouter. Sur un clip voix : <strong>glisse la barre bleue du haut</strong> pour le déplacer (Ctrl+glisser embarque les bruitages), <strong>clique-glisse sur le corps</strong> pour sélectionner une zone à éditer.
       </div>
     </div>
+  </div>
+</div>
 
-    <div class="inspector-drawer" id="inspectorDrawer">
-      <button class="drawer-toggle" id="drawerToggle" title="Replier / déplier le panneau">‹</button>
-      <div class="inspector-drawer-content">
-        <div id="drawerEmpty" class="drawer-empty-msg">Sélectionne un clip, un bruitage ou une piste pour afficher ses propriétés ici.</div>
+<!-- Inspecteur flottant : popup qui apparaît à côté du clip/piste sélectionné -->
+<div id="inspectorFloating" class="inspector-floating" hidden>
+  <div class="inspector-drag-handle" id="inspectorDragHandle">
+    <span>Propriétés</span>
+    <button class="inspector-close" id="inspectorClose" title="Fermer">×</button>
+  </div>
 
-        <div id="inspectorPanel" class="inspector hidden">
-          <div class="inspector-header">
-            <div class="inspector-swatch" id="inspectorSwatch"></div>
-            <div class="inspector-name" id="inspectorName">—</div>
-            <div class="inspector-time" id="inspectorTime"></div>
-          </div>
-          <div class="inspector-controls">
-            <div class="inspector-control" style="display:flex;gap:6px;align-items:center;justify-content:flex-start;flex-wrap:wrap">
-              <button id="btnNormalizeItem" title="Normaliser ce clip">🔊 Normaliser</button>
-              <button id="btnDuplicateEvent" title="Dupliquer">⧉ Dupliquer</button>
-              <button id="btnMuteEvent" title="Muet">🔇</button>
-              <button id="btnDeleteEvent" class="danger" title="Supprimer">× Suppr.</button>
-            </div>
-            <div class="inspector-control">
-              <div class="inspector-label"><span>Volume</span><span class="channel-value" id="evVolVal">100%</span></div>
-              <input type="range" id="evVol" min="0" max="200" value="100">
-            </div>
-            <div class="inspector-control">
-              <div class="inspector-label"><span>Fade in</span><span class="channel-value" id="evFadeInVal">0.0s</span></div>
-              <input type="range" id="evFadeIn" min="0" max="50" value="0">
-            </div>
-            <div class="inspector-control">
-              <div class="inspector-label"><span>Fade out</span><span class="channel-value" id="evFadeOutVal">0.0s</span></div>
-              <input type="range" id="evFadeOut" min="0" max="50" value="0">
-            </div>
-          </div>
-        </div>
+  <div id="inspectorPanel" class="inspector hidden">
+    <div class="inspector-header">
+      <div class="inspector-swatch" id="inspectorSwatch"></div>
+      <div class="inspector-name" id="inspectorName">—</div>
+      <div class="inspector-time" id="inspectorTime"></div>
+    </div>
+    <div class="inspector-controls">
+      <div class="inspector-control" style="display:flex;gap:6px;align-items:center;justify-content:flex-start;flex-wrap:wrap">
+        <button id="btnNormalizeItem" title="Normaliser ce clip">🔊 Normaliser</button>
+        <button id="btnDuplicateEvent" title="Dupliquer">⧉ Dupliquer</button>
+        <button id="btnMuteEvent" title="Muet">🔇</button>
+        <button id="btnDeleteEvent" class="danger" title="Supprimer">× Suppr.</button>
+      </div>
+      <div class="inspector-control">
+        <div class="inspector-label"><span>Volume</span><span class="channel-value" id="evVolVal">100%</span></div>
+        <input type="range" id="evVol" min="0" max="200" value="100">
+      </div>
+      <div class="inspector-control">
+        <div class="inspector-label"><span>Fade in</span><span class="channel-value" id="evFadeInVal">0.0s</span></div>
+        <input type="range" id="evFadeIn" min="0" max="50" value="0">
+      </div>
+      <div class="inspector-control">
+        <div class="inspector-label"><span>Fade out</span><span class="channel-value" id="evFadeOutVal">0.0s</span></div>
+        <input type="range" id="evFadeOut" min="0" max="50" value="0">
+      </div>
+    </div>
+  </div>
 
-        <div id="trackInspectorPanel" class="inspector hidden">
-          <div class="inspector-header">
-            <div class="inspector-swatch" id="trackInspSwatch"></div>
-            <div class="inspector-name" id="trackInspName">—</div>
-            <span style="font-size:11px;color:#8a91a0;text-transform:uppercase;letter-spacing:0.4px;background:#0a0c10;padding:3px 8px;border-radius:4px;border:1px solid #2a2f3a;display:inline-block;align-self:flex-start">Piste</span>
-          </div>
-          <div class="inspector-controls">
-            <div class="inspector-control">
-              <div class="inspector-label"><span>Volume</span><span class="channel-value" id="trackInspVolVal">100%</span></div>
-              <input type="range" id="trackInspVol" min="0" max="400" value="100">
-            </div>
-            <div class="inspector-control" style="display:flex;flex-direction:column;gap:8px;justify-content:center">
-              <button id="btnNormalizeTrack" style="width:100%;justify-content:center">🔊 Normaliser la piste</button>
-              <button id="btnCompressTrack" style="width:100%;justify-content:center">🎙 Compression vocale</button>
-            </div>
-            <div class="inspector-control" style="display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap">
-              <button id="btnTrackInspMute" style="flex:1;justify-content:center">🔇 Muet</button>
-              <button id="btnTrackInspSolo" style="flex:1;justify-content:center">S Solo</button>
-              <button id="btnTrackInspDelete" class="danger" style="flex:1;justify-content:center">× Supprimer</button>
-            </div>
-          </div>
-        </div>
+  <div id="trackInspectorPanel" class="inspector hidden">
+    <div class="inspector-header">
+      <div class="inspector-swatch" id="trackInspSwatch"></div>
+      <div class="inspector-name" id="trackInspName">—</div>
+      <span style="font-size:11px;color:#8a91a0;text-transform:uppercase;letter-spacing:0.4px;background:#0a0c10;padding:3px 8px;border-radius:4px;border:1px solid #2a2f3a;display:inline-block;align-self:flex-start">Piste</span>
+    </div>
+    <div class="inspector-controls">
+      <div class="inspector-control">
+        <div class="inspector-label"><span>Volume</span><span class="channel-value" id="trackInspVolVal">100%</span></div>
+        <input type="range" id="trackInspVol" min="0" max="400" value="100">
+      </div>
+      <div class="inspector-control" style="display:flex;flex-direction:column;gap:8px;justify-content:center">
+        <button id="btnNormalizeTrack" style="width:100%;justify-content:center">🔊 Normaliser la piste</button>
+        <button id="btnCompressTrack" style="width:100%;justify-content:center">🎙 Compression vocale</button>
+      </div>
+      <div class="inspector-control" style="display:flex;gap:6px;align-items:center;justify-content:center;flex-wrap:wrap">
+        <button id="btnTrackInspMute" style="flex:1;justify-content:center">🔇 Muet</button>
+        <button id="btnTrackInspSolo" style="flex:1;justify-content:center">S Solo</button>
+        <button id="btnTrackInspDelete" class="danger" style="flex:1;justify-content:center">× Supprimer</button>
       </div>
     </div>
   </div>
@@ -1606,7 +1637,7 @@ function renderPads() {
       </div>
       <div class="pad-name">${escapeHtml(pad.name)}</div>
       <div class="pad-duration">${formatDuration(pad.duration)}</div>
-      <div class="pad-loop">⟳ boucle</div>
+      <div class="pad-loop" title="Boucle">⟳</div>
       <div class="pad-progress" data-progress="${pad.id}"></div>
     `;
     setupPadInteraction(el, pad);
@@ -2038,6 +2069,7 @@ function renderTracks(w) {
     // Header
     const head = document.createElement('div');
     head.className = 'track-head' + (track.id === state.activeTrackId ? ' active' : '');
+    head.dataset.trackId = track.id;
     const icon = track.type === 'voice' ? '🎤' : '🎵';
     const audibleHint = !trackIsAudible(track) ? '<span style="color:#ef4444">⨯</span>' : '';
     head.innerHTML = `
@@ -2719,16 +2751,18 @@ function deleteEvent(id) {
 function renderInspector() {
   const panel = document.getElementById('inspectorPanel');
   const trackPanel = document.getElementById('trackInspectorPanel');
-  const emptyMsg = document.getElementById('drawerEmpty');
   if (!state.selectedKind || !state.selectedId || !state.take) {
     panel.classList.add('hidden');
     trackPanel.classList.add('hidden');
-    if (emptyMsg) emptyMsg.style.display = '';
+    hideFloatingInspector();
     return;
   }
-  // Quelque chose est sélectionné : auto-ouvrir le tiroir s'il était fermé
-  autoOpenDrawerIfNeeded();
-  if (emptyMsg) emptyMsg.style.display = 'none';
+  // Auto-ouverture du panneau flottant si pas fermé manuellement pour cet item
+  const currentSelKey = state.selectedKind + ':' + state.selectedId;
+  if (state.inspectorDismissedFor !== currentSelKey) {
+    state.inspectorDismissedFor = null;
+    showFloatingInspector();
+  }
   // Cas : sélection d'une piste → afficher l'inspector piste
   if (state.selectedKind === 'track') {
     panel.classList.add('hidden');
@@ -3985,18 +4019,21 @@ document.getElementById('bankModalName').addEventListener('keydown', e => {
   if (e.key === 'Enter') document.getElementById('bankModalOk').click();
   if (e.key === 'Escape') document.getElementById('bankModalCancel').click();
 });
-document.getElementById('btnNewBank').addEventListener('click', () => openBankModal('new'));
-document.getElementById('btnRenameBank').addEventListener('click', () => openBankModal('rename'));
+document.getElementById('btnNewBank').addEventListener('click', () => { closeBankMenu(); openBankModal('new'); });
+document.getElementById('btnRenameBank').addEventListener('click', () => { closeBankMenu(); openBankModal('rename'); });
 document.getElementById('btnDeleteBank').addEventListener('click', async () => {
+  closeBankMenu();
   const b = state.banks.find(x => x.id === state.currentBankId); if (!b) return;
   if (!confirm(`Supprimer la banque "${b.name}" et tous ses pads ?`)) return;
   await deleteBank(state.currentBankId);
 });
 document.getElementById('btnExportBank').addEventListener('click', async () => {
+  closeBankMenu();
   if (!state.currentBankId) return;
   await downloadBankFile(state.currentBankId);
 });
 document.getElementById('btnImportBank').addEventListener('click', () => {
+  closeBankMenu();
   const inp = document.createElement('input');
   inp.type = 'file';
   inp.accept = '.mixobank,.zip';
@@ -4007,6 +4044,22 @@ document.getElementById('btnImportBank').addEventListener('click', () => {
   inp.click();
 });
 document.getElementById('bankSelect').addEventListener('change', e => switchBank(e.target.value));
+
+// Toggle menu actions de banque
+function closeBankMenu() {
+  document.getElementById('bankMenuDropdown').hidden = true;
+}
+document.getElementById('btnBankMenu').addEventListener('click', e => {
+  e.stopPropagation();
+  const dd = document.getElementById('bankMenuDropdown');
+  dd.hidden = !dd.hidden;
+});
+document.addEventListener('click', e => {
+  const dd = document.getElementById('bankMenuDropdown');
+  if (dd && !dd.hidden && !e.target.closest('.bank-menu-wrapper')) {
+    dd.hidden = true;
+  }
+});
 
 document.getElementById('btnHelp').addEventListener('click', () => document.getElementById('helpModal').classList.add('visible'));
 document.getElementById('helpModalClose').addEventListener('click', () => document.getElementById('helpModal').classList.remove('visible'));
@@ -4860,53 +4913,98 @@ function setupLayoutResizer() {
   });
 }
 
-function applyDrawerOpen(open) {
-  const row = document.getElementById('editorMainRow');
-  const toggle = document.getElementById('drawerToggle');
-  if (!row || !toggle) return;
-  row.classList.toggle('drawer-open', open);
-  toggle.textContent = open ? '›' : '‹';
-  toggle.title = open ? 'Replier le panneau' : 'Déplier le panneau de propriétés';
+// ===================== Panneau flottant Inspecteur =====================
+function showFloatingInspector() {
+  const fp = document.getElementById('inspectorFloating');
+  if (!fp || !fp.hidden) return;
+  fp.hidden = false;
+  // Position par défaut : à droite près de la sélection si possible, sinon coin haut-droite
+  positionFloatingInspectorNearSelection();
 }
-function setupDrawerToggle() {
-  const toggle = document.getElementById('drawerToggle');
-  if (!toggle) return;
-  toggle.addEventListener('click', () => {
-    const row = document.getElementById('editorMainRow');
-    const willOpen = !row.classList.contains('drawer-open');
-    applyDrawerOpen(willOpen);
-    localStorage.setItem(STORAGE_DRAWER_OPEN, willOpen ? '1' : '0');
-    // Si l'utilisateur ferme manuellement alors qu'un item est sélectionné, on mémorise
-    // pour ne pas auto-rouvrir tant que la sélection reste la même.
-    if (!willOpen && state.selectedKind && state.selectedId) {
-      state.drawerDismissedFor = state.selectedKind + ':' + state.selectedId;
-    } else {
-      state.drawerDismissedFor = null;
+function hideFloatingInspector() {
+  const fp = document.getElementById('inspectorFloating');
+  if (!fp) return;
+  fp.hidden = true;
+}
+function positionFloatingInspectorNearSelection() {
+  const fp = document.getElementById('inspectorFloating');
+  if (!fp || fp.hidden) return;
+  // Si l'utilisateur a déjà positionné le panneau (drag), on ne touche plus
+  if (state.inspectorWasDragged) return;
+  // Trouver l'élément sélectionné dans le DOM
+  let selEl = null;
+  if (state.selectedKind === 'event') {
+    selEl = document.querySelector(`.event-block[data-id="${state.selectedId}"]`);
+  } else if (state.selectedKind === 'voice') {
+    selEl = document.querySelector(`.voice-clip[data-id="${state.selectedId}"]`);
+  } else if (state.selectedKind === 'track') {
+    selEl = document.querySelector(`.track-head[data-track-id="${state.selectedId}"]`);
+  }
+  // Sinon, position par défaut en haut à droite du viewport
+  const margin = 16;
+  const fpRect = fp.getBoundingClientRect();
+  let left, top;
+  if (selEl) {
+    const r = selEl.getBoundingClientRect();
+    // Tenter à droite de la sélection
+    left = r.right + margin;
+    top = r.top;
+    // Si déborde à droite, mettre à gauche
+    if (left + fpRect.width > window.innerWidth - margin) {
+      left = r.left - fpRect.width - margin;
     }
-    // Redraw timeline pour ajuster les largeurs
-    setTimeout(() => { if (state.take) renderTimeline(); }, 220);
+    // Si déborde encore à gauche, mettre à droite contre le bord
+    if (left < margin) left = window.innerWidth - fpRect.width - margin;
+    // S'assurer que ne déborde pas en haut/bas
+    if (top + fpRect.height > window.innerHeight - margin) {
+      top = window.innerHeight - fpRect.height - margin;
+    }
+    if (top < margin) top = margin;
+  } else {
+    left = window.innerWidth - fpRect.width - margin;
+    top = margin;
+  }
+  fp.style.left = left + 'px';
+  fp.style.top = top + 'px';
+}
+function setupFloatingInspector() {
+  const fp = document.getElementById('inspectorFloating');
+  const handle = document.getElementById('inspectorDragHandle');
+  const closeBtn = document.getElementById('inspectorClose');
+  if (!fp || !handle) return;
+  closeBtn.addEventListener('click', () => {
+    hideFloatingInspector();
+    // Mémoriser que l'utilisateur a fermé volontairement
+    if (state.selectedKind && state.selectedId) {
+      state.inspectorDismissedFor = state.selectedKind + ':' + state.selectedId;
+    }
   });
-}
-function loadDrawerState() {
-  // Par défaut ouvert pour découvrir la fonctionnalité
-  const stored = localStorage.getItem(STORAGE_DRAWER_OPEN);
-  const open = stored === null ? true : stored === '1';
-  applyDrawerOpen(open);
-}
-
-// Ouvre le tiroir si quelque chose est sélectionné (utile pour ne pas rater l'info)
-function autoOpenDrawerIfNeeded() {
-  if (!state.selectedKind || !state.selectedId) return;
-  // Si l'utilisateur vient de fermer le tiroir pour cet item précis, on ne le ré-ouvre pas
-  const currentSelKey = state.selectedKind + ':' + state.selectedId;
-  if (state.drawerDismissedFor === currentSelKey) return;
-  // Nouvelle sélection : on efface le flag
-  state.drawerDismissedFor = null;
-  const row = document.getElementById('editorMainRow');
-  if (!row.classList.contains('drawer-open')) {
-    applyDrawerOpen(true);
-    localStorage.setItem(STORAGE_DRAWER_OPEN, '1');
-    setTimeout(() => { if (state.take) renderTimeline(); }, 220);
+  // Drag du handle pour repositionner
+  let dragOff = null;
+  handle.addEventListener('mousedown', e => {
+    if (e.target === closeBtn) return;
+    const rect = fp.getBoundingClientRect();
+    dragOff = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    e.preventDefault();
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+  function onMove(e) {
+    if (!dragOff) return;
+    let x = e.clientX - dragOff.x;
+    let y = e.clientY - dragOff.y;
+    // Garder dans le viewport
+    const rect = fp.getBoundingClientRect();
+    x = Math.max(0, Math.min(window.innerWidth - rect.width, x));
+    y = Math.max(0, Math.min(window.innerHeight - rect.height, y));
+    fp.style.left = x + 'px';
+    fp.style.top = y + 'px';
+    state.inspectorWasDragged = true;
+  }
+  function onUp() {
+    dragOff = null;
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
   }
 }
 
@@ -5009,8 +5107,7 @@ async function offerResumeAutoSave() {
     await listMics();
     loadPadsHeight();
     setupLayoutResizer();
-    setupDrawerToggle();
-    loadDrawerState();
+    setupFloatingInspector();
     // Proposer la reprise après que tout soit prêt
     setTimeout(() => offerResumeAutoSave(), 500);
   } catch (e) {
