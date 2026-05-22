@@ -112,7 +112,24 @@
   .add-pad:hover { background: #1c1f27; color: #e8ebf0; }
   .pad.project-pad { border: 2px dashed rgba(255,255,255,0.5); }
   .pad-badge { position: absolute; top: 4px; right: 4px; font-size: 9px; padding: 1px 5px; background: rgba(0,0,0,0.55); border-radius: 4px; color: #fff; letter-spacing: 0.3px; pointer-events: none; }
-  .pad-fav { position: absolute; bottom: 6px; right: 6px; font-size: 14px; line-height: 1; pointer-events: none; text-shadow: 0 0 4px rgba(0,0,0,0.6); }
+  .pad-fav {
+    position: absolute; bottom: 4px; right: 4px;
+    width: 22px; height: 22px; padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; line-height: 1;
+    background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 50%; cursor: pointer;
+    text-shadow: 0 0 4px rgba(0,0,0,0.6);
+    transition: transform 0.12s, background 0.12s, opacity 0.12s;
+    color: #fff;
+  }
+  /* Pad pas en favori : étoile contour, cachée par défaut, visible au survol */
+  .pad-fav.is-empty { opacity: 0; }
+  .pad:hover .pad-fav.is-empty { opacity: 1; }
+  .pad-fav.is-empty:hover { background: rgba(0,0,0,0.6); color: #fde047; transform: scale(1.15); }
+  /* Pad favori : étoile pleine jaune, toujours visible */
+  .pad-fav.is-active { color: #fbbf24; opacity: 1; }
+  .pad-fav.is-active:hover { transform: scale(1.15); background: rgba(0,0,0,0.55); }
   .pad.project-pad .pad-actions { right: 38px; }
 
   /* === ÉDITEUR === */
@@ -1581,7 +1598,7 @@ function renderPads() {
     }
     el.innerHTML = `
       ${sc ? `<div class="pad-shortcut">${sc}</div>` : ''}
-      ${pad.favorite ? `<div class="pad-fav" title="Favori">⭐</div>` : ''}
+      ${!isProject ? `<button class="pad-fav ${pad.favorite ? 'is-active' : 'is-empty'}" data-fav="${pad.id}" title="${pad.favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}">${pad.favorite ? '★' : '☆'}</button>` : ''}
       ${isProject ? `<div class="pad-badge">📂 Projet</div>` : bankBadge}
       <div class="pad-actions">
         <button class="pad-action-btn" data-edit="${pad.id}" title="Modifier">✎</button>
@@ -1603,6 +1620,30 @@ function renderPads() {
   grid.appendChild(add);
   grid.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); deletePad(b.dataset.del); }));
   grid.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); openPadModal(b.dataset.edit); }));
+  grid.querySelectorAll('[data-fav]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); e.preventDefault(); togglePadFavorite(b.dataset.fav); }));
+}
+
+async function togglePadFavorite(padId) {
+  const pad = state.pads.find(p => p.id === padId);
+  // En vue Favoris, le pad est dans state.pads mais sa bankId est sa vraie banque, donc updatePad fonctionnera
+  if (!pad) return;
+  const becomingFav = !pad.favorite;
+  const changes = { favorite: becomingFav };
+  if (becomingFav) {
+    // Donner un favoriteOrder à la fin de la liste
+    const allPads = await dbGetAll(STORE_PADS);
+    const favCount = allPads.filter(p => p.favorite && p.id !== padId).length;
+    changes.favoriteOrder = favCount;
+  }
+  await updatePad(padId, changes);
+  // Si on est en vue Favoris et qu'on vient de retirer, le pad doit disparaître ; recharger la vue
+  if (state.currentBankId === FAVORITES_BANK_ID) {
+    await loadPadsForBank(FAVORITES_BANK_ID);
+  } else {
+    // Mettre à jour l'état local en mémoire pour redessiner sans toucher la DB à nouveau
+    pad.favorite = becomingFav;
+    renderPads();
+  }
 }
 
 // Logique d'interaction des pads : un mousedown peut devenir un drag vers la timeline ou un simple clic (trigger).
@@ -1612,6 +1653,7 @@ function setupPadInteraction(el, pad) {
 
   function onDown(e) {
     if (e.target.closest('.pad-actions')) return;
+    if (e.target.closest('.pad-fav')) return;
     if (e.button !== undefined && e.button !== 0) return;
     downX = e.clientX; downY = e.clientY;
     started = true; isDraggingTimeline = false;
