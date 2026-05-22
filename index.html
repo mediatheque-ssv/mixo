@@ -345,6 +345,8 @@
       <button id="btnNewBank" class="icon-only" title="Nouvelle banque">+</button>
       <button id="btnRenameBank" class="icon-only" title="Renommer">✎</button>
       <button id="btnDeleteBank" class="icon-only" title="Supprimer">🗑</button>
+      <button id="btnExportBank" class="icon-only" title="Exporter la banque">📤</button>
+      <button id="btnImportBank" class="icon-only" title="Importer une banque">📥</button>
     </div>
   </div>
   <div id="padsGrid" class="pads-grid"></div>
@@ -1319,6 +1321,186 @@ async function deleteBank(id) {
   state.banks = state.banks.filter(b => b.id !== id);
   await switchBank(state.banks[0].id);
   renderBankSelect();
+}
+
+// ===================== Import/Export de banques =====================
+
+// Construit un Blob ZIP contenant tous les pads d'une banque + métadonnées
+async function exportBankAsZip(bankId) {
+  if (typeof JSZip === 'undefined') throw new Error('JSZip non chargé');
+  const bank = state.banks.find(b => b.id === bankId);
+  if (!bank) throw new Error("Banque introuvable");
+  // Récupérer tous les pads de cette banque
+  const allPads = await dbGetAll(STORE_PADS);
+  const pads = allPads.filter(p => p.bankId === bankId).sort((a,b) => (a.order||0) - (b.order||0));
+  if (pads.length === 0) throw new Error("Cette banque est vide, rien à exporter.");
+
+  const zip = new JSZip();
+  const padsMetadata = [];
+  let i = 0;
+  for (const pad of pads) {
+    if (!pad.blob) continue;
+    // Préserver le format binaire d'origine (mp3, wav, webm, etc.) tel quel
+    const ext = (pad.blob.type && pad.blob.type.includes('mp3')) ? 'mp3'
+      : (pad.blob.type && pad.blob.type.includes('wav')) ? 'wav'
+      : (pad.blob.type && pad.blob.type.includes('ogg')) ? 'ogg'
+      : (pad.blob.type && pad.blob.type.includes('webm')) ? 'webm'
+      : (pad.blob.type && pad.blob.type.includes('mp4')) ? 'm4a'
+      : 'audio';
+    const filename = `pads/${i.toString().padStart(3, '0')}_${pad.id}.${ext}`;
+    const bytes = new Uint8Array(await pad.blob.arrayBuffer());
+    zip.file(filename, bytes);
+    padsMetadata.push({
+      id: pad.id,
+      name: pad.name,
+      color: pad.color,
+      loop: !!pad.loop,
+      duration: pad.duration,
+      order: pad.order || i,
+      audioFile: filename,
+      mimeType: pad.blob.type || 'audio/mp3',
+    });
+    i++;
+  }
+
+  const metadata = {
+    format: 'mixobank',
+    version: 1,
+    name: bank.name,
+    createdAt: new Date().toISOString(),
+    pads: padsMetadata,
+  };
+  zip.file('metadata.json', JSON.stringify(metadata));
+  const blob = await zip.generateAsync({
+    type: 'blob',
+    compression: 'DEFLATE',
+    compressionOptions: { level: 6 },
+  });
+  return { blob, name: bank.name };
+}
+
+async function downloadBankFile(bankId) {
+  try {
+    const { blob, name } = await exportBankAsZip(bankId);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (name || 'banque').replace(/[^a-zA-Z0-9 _-]/g, '_') + '.mixobank';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    showStatus(`Banque "${name}" exportée`, 'success');
+  } catch (e) {
+    showStatus("Erreur d'export : " + e.message, 'error');
+  }
+}
+
+// Importe un fichier .mixobank. Stratégies : 'new' (crée une nouvelle banque) ou 'merge:<bankId>' (fusionne).
+async function importBankFromFile(file, strategy) {
+  if (typeof JSZip === 'undefined') throw new Error('JSZip non chargé');
+  const zip = await JSZip.loadAsync(file);
+  const metaFile = zip.file('metadata.json');
+  if (!metaFile) throw new Error("Fichier .mixobank invalide (pas de metadata.json)");
+  const meta = JSON.parse(await metaFile.async('string'));
+  if (meta.format !== 'mixobank') throw new Error("Ce n'est pas une banque Mixo");
+
+  // Déterminer la banque cible
+  let targetBankId;
+  if (strategy === 'new' || !strategy) {
+    // Nouvelle banque, avec suffixe si conflit de nom
+    let name = meta.name || 'Banque importée';
+    const existingNames = new Set(state.banks.map(b => b.name));
+    if (existingNames.has(name)) {
+      let n = 2;
+      while (existingNames.has(`${name} (${n})`)) n++;
+      name = `${name} (${n})`;
+    }
+    const newBank = { id: uid('b'), name };
+    await dbPut(STORE_BANKS, newBank);
+    state.banks.push(newBank);
+    targetBankId = newBank.id;
+  } else if (strategy.startsWith('merge:')) {
+    targetBankId = strategy.slice(6);
+    if (!state.banks.find(b => b.id === targetBankId)) throw new Error("Banque cible introuvable");
+  } else {
+    throw new Error("Stratégie d'import inconnue");
+  }
+
+  // Ordre de départ pour les pads importés
+  const existingPads = (await dbGetAll(STORE_PADS)).filter(p => p.bankId === targetBankId);
+  let nextOrder = existingPads.length;
+
+  // Importer chaque pad
+  let imported = 0;
+  for (const padMeta of (meta.pads || [])) {
+    if (!padMeta.audioFile) continue;
+    const audioEntry = zip.file(padMeta.audioFile);
+    if (!audioEntry) { console.warn('Audio manquant pour pad', padMeta.name); continue; }
+    const bytes = await audioEntry.async('uint8array');
+    const blob = new Blob([bytes], { type: padMeta.mimeType || 'audio/mp3' });
+    // Nouvel id pour éviter les collisions, surtout en fusion
+    const newPadId = uid('p');
+    const newPad = {
+      id: newPadId,
+      bankId: targetBankId,
+      name: padMeta.name || 'Pad',
+      color: padMeta.color || '#3b82f6',
+      loop: !!padMeta.loop,
+      duration: padMeta.duration,
+      order: nextOrder++,
+      blob,
+    };
+    await dbPut(STORE_PADS, newPad);
+    imported++;
+  }
+
+  // Basculer sur la banque cible et recharger
+  await switchBank(targetBankId);
+  renderBankSelect();
+  showStatus(`Banque importée (${imported} pad${imported > 1 ? 's' : ''}) dans "${state.banks.find(b => b.id === targetBankId).name}"`, 'success');
+}
+
+// Modal pour choisir la stratégie à l'import : nouvelle banque ou fusion dans une existante
+function openImportBankModal(file) {
+  // Construire la liste des banques existantes (hors banques de projet legacy)
+  const banks = state.banks.filter(b => !isProjectBank(b));
+  const html = `
+    <div class="modal-content" style="max-width: 480px;">
+      <h3>Importer une banque</h3>
+      <p style="color:#8a91a0;font-size:13px;line-height:1.5;margin:8px 0 16px">Choisis comment importer les pads :</p>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button id="importStratNew" class="primary" style="justify-content:flex-start;text-align:left;padding:12px">
+          <span style="display:block;font-weight:600">➕ Créer une nouvelle banque</span>
+          <span style="display:block;font-size:11px;opacity:0.8;margin-top:2px">Les pads sont placés dans une banque dédiée</span>
+        </button>
+        <div style="border-top:1px solid #2a2f3a;margin:4px 0;padding-top:8px">
+          <div style="font-size:11px;color:#8a91a0;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px">Ou fusionner dans une banque existante :</div>
+          ${banks.map(b => `<button class="import-merge-btn" data-bank="${b.id}" style="justify-content:flex-start;text-align:left;padding:10px;width:100%;margin-bottom:4px">📂 ${b.name}</button>`).join('')}
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:16px">
+        <button id="importStratCancel">Annuler</button>
+      </div>
+    </div>`;
+  const modal = document.createElement('div');
+  modal.className = 'modal visible';
+  modal.innerHTML = html;
+  document.body.appendChild(modal);
+  const close = () => modal.remove();
+  modal.addEventListener('click', e => { if (e.target === modal) close(); });
+  modal.querySelector('#importStratCancel').addEventListener('click', close);
+  modal.querySelector('#importStratNew').addEventListener('click', async () => {
+    close();
+    try { await importBankFromFile(file, 'new'); }
+    catch (e) { showStatus("Erreur : " + e.message, 'error'); }
+  });
+  modal.querySelectorAll('.import-merge-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const bid = btn.dataset.bank;
+      close();
+      try { await importBankFromFile(file, 'merge:' + bid); }
+      catch (e) { showStatus("Erreur : " + e.message, 'error'); }
+    });
+  });
 }
 
 async function loadPadsForBank(bankId) {
@@ -3696,6 +3878,20 @@ document.getElementById('btnDeleteBank').addEventListener('click', async () => {
   if (!confirm(`Supprimer la banque "${b.name}" et tous ses pads ?`)) return;
   await deleteBank(state.currentBankId);
 });
+document.getElementById('btnExportBank').addEventListener('click', async () => {
+  if (!state.currentBankId) return;
+  await downloadBankFile(state.currentBankId);
+});
+document.getElementById('btnImportBank').addEventListener('click', () => {
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = '.mixobank,.zip';
+  inp.addEventListener('change', e => {
+    const f = e.target.files[0];
+    if (f) openImportBankModal(f);
+  });
+  inp.click();
+});
 document.getElementById('bankSelect').addEventListener('change', e => switchBank(e.target.value));
 
 document.getElementById('btnHelp').addEventListener('click', () => document.getElementById('helpModal').classList.add('visible'));
@@ -3842,6 +4038,11 @@ document.addEventListener('drop', async e => {
   document.body.classList.remove('file-dragover');
   const file = e.dataTransfer.files[0];
   if (!file) return;
+  // Fichier .mixobank ?
+  if (file.name.endsWith('.mixobank')) {
+    openImportBankModal(file);
+    return;
+  }
   // Fichier .mixo ?
   if (file.name.endsWith('.mixo') || file.type === 'application/json') {
     await loadProjectFromFile(file);
@@ -3852,7 +4053,7 @@ document.addEventListener('drop', async e => {
     await handleImportedAudioFile(file);
     return;
   }
-  showStatus("Type de fichier non reconnu (déposez un audio ou un .mixo).", 'error');
+  showStatus("Type de fichier non reconnu (déposez un audio, .mixo ou .mixobank).", 'error');
 });
 
 // ===================== SAUVEGARDE / CHARGEMENT DE PROJET =====================
