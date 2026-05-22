@@ -112,6 +112,7 @@
   .add-pad:hover { background: #1c1f27; color: #e8ebf0; }
   .pad.project-pad { border: 2px dashed rgba(255,255,255,0.5); }
   .pad-badge { position: absolute; top: 4px; right: 4px; font-size: 9px; padding: 1px 5px; background: rgba(0,0,0,0.55); border-radius: 4px; color: #fff; letter-spacing: 0.3px; pointer-events: none; }
+  .pad-fav { position: absolute; bottom: 6px; right: 6px; font-size: 14px; line-height: 1; pointer-events: none; text-shadow: 0 0 4px rgba(0,0,0,0.6); }
   .pad.project-pad .pad-actions { right: 38px; }
 
   /* === ÉDITEUR === */
@@ -489,6 +490,9 @@
     <div class="modal-color-picker" id="colorPicker"></div>
     <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:14px">
       <input type="checkbox" id="modalLoop"> Lecture en boucle
+    </label>
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-top:8px">
+      <input type="checkbox" id="modalFavorite"> ⭐ Ajouter aux favoris
     </label>
     <div id="modalBankRow" style="display:none">
       <label>Déplacer vers la banque</label>
@@ -1265,6 +1269,9 @@ function getClipBuffer(clip) {
 }
 
 // ===================== Banques / Pads =====================
+// ID virtuel pour la "banque" Favoris (n'existe pas en base, c'est juste un mode de filtrage)
+const FAVORITES_BANK_ID = '__favorites__';
+
 async function loadBanks() {
   let banks = await dbGetAll(STORE_BANKS);
   if (banks.length === 0) {
@@ -1274,7 +1281,14 @@ async function loadBanks() {
   }
   state.banks = banks;
   const last = localStorage.getItem('studio.currentBankId');
-  state.currentBankId = (last && banks.find(b => b.id === last)) ? last : banks[0].id;
+  // Accepter aussi le mode Favoris virtuel
+  if (last === FAVORITES_BANK_ID) {
+    state.currentBankId = FAVORITES_BANK_ID;
+  } else if (last && banks.find(b => b.id === last)) {
+    state.currentBankId = last;
+  } else {
+    state.currentBankId = banks[0].id;
+  }
   renderBankSelect();
   await loadPadsForBank(state.currentBankId);
 }
@@ -1287,13 +1301,31 @@ function isProjectBank(bank) {
 function renderBankSelect() {
   const sel = document.getElementById('bankSelect');
   sel.innerHTML = '';
+  // Toujours en premier : Favoris
+  const optFav = document.createElement('option');
+  optFav.value = FAVORITES_BANK_ID;
+  optFav.textContent = '⭐ Favoris';
+  if (state.currentBankId === FAVORITES_BANK_ID) optFav.selected = true;
+  sel.appendChild(optFav);
+  // Séparateur (option disabled, juste visuel)
+  const sep = document.createElement('option');
+  sep.disabled = true;
+  sep.textContent = '──────────';
+  sel.appendChild(sep);
+  // Puis les banques classiques
   state.banks.filter(b => !isProjectBank(b)).forEach(b => {
     const opt = document.createElement('option');
     opt.value = b.id; opt.textContent = b.name;
     if (b.id === state.currentBankId) opt.selected = true;
     sel.appendChild(opt);
   });
+  // Désactiver les boutons qui n'ont pas de sens en mode Favoris
+  const isFav = state.currentBankId === FAVORITES_BANK_ID;
+  document.getElementById('btnRenameBank').disabled = isFav;
+  document.getElementById('btnDeleteBank').disabled = isFav;
+  document.getElementById('btnExportBank').disabled = isFav;
 }
+
 async function switchBank(bankId) {
   state.activeSources.forEach(a => { try { a.source.stop(); } catch(e){} });
   state.activeSources.clear();
@@ -1302,6 +1334,7 @@ async function switchBank(bankId) {
   // On ne vide PAS state.padBuffers : on garde les buffers en mémoire pour que les events
   // de la timeline qui référencent des pads d'autres banques continuent de fonctionner.
   await loadPadsForBank(bankId);
+  renderBankSelect();
 }
 async function createBank(name) {
   const b = { id: uid('b'), name };
@@ -1328,6 +1361,7 @@ async function deleteBank(id) {
 // Construit un Blob ZIP contenant tous les pads d'une banque + métadonnées
 async function exportBankAsZip(bankId) {
   if (typeof JSZip === 'undefined') throw new Error('JSZip non chargé');
+  if (bankId === FAVORITES_BANK_ID) throw new Error("La banque Favoris est virtuelle, exporte plutôt une banque réelle.");
   const bank = state.banks.find(b => b.id === bankId);
   if (!bank) throw new Error("Banque introuvable");
   // Récupérer tous les pads de cette banque
@@ -1461,39 +1495,39 @@ async function importBankFromFile(file, strategy) {
 
 // Modal pour choisir la stratégie à l'import : nouvelle banque ou fusion dans une existante
 function openImportBankModal(file) {
-  // Construire la liste des banques existantes (hors banques de projet legacy)
   const banks = state.banks.filter(b => !isProjectBank(b));
   const html = `
-    <div class="modal-content" style="max-width: 480px;">
+    <div class="modal" style="max-width: 480px;">
       <h3>Importer une banque</h3>
-      <p style="color:#8a91a0;font-size:13px;line-height:1.5;margin:8px 0 16px">Choisis comment importer les pads :</p>
+      <p style="color:#8a91a0;font-size:13px;line-height:1.5;margin:0 0 16px">Choisis comment importer les pads :</p>
       <div style="display:flex;flex-direction:column;gap:8px">
-        <button id="importStratNew" class="primary" style="justify-content:flex-start;text-align:left;padding:12px">
-          <span style="display:block;font-weight:600">➕ Créer une nouvelle banque</span>
-          <span style="display:block;font-size:11px;opacity:0.8;margin-top:2px">Les pads sont placés dans une banque dédiée</span>
+        <button id="importStratNew" class="primary" style="justify-content:flex-start;text-align:left;padding:12px;display:flex;flex-direction:column;align-items:flex-start;gap:2px">
+          <span style="font-weight:600">➕ Créer une nouvelle banque</span>
+          <span style="font-size:11px;opacity:0.85;font-weight:normal">Les pads sont placés dans une banque dédiée</span>
         </button>
-        <div style="border-top:1px solid #2a2f3a;margin:4px 0;padding-top:8px">
-          <div style="font-size:11px;color:#8a91a0;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px">Ou fusionner dans une banque existante :</div>
+        ${banks.length > 0 ? `
+        <div style="border-top:1px solid #2a2f3a;margin:8px 0 4px;padding-top:10px">
+          <div style="font-size:11px;color:#8a91a0;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:8px">Ou fusionner dans une banque existante :</div>
           ${banks.map(b => `<button class="import-merge-btn" data-bank="${b.id}" style="justify-content:flex-start;text-align:left;padding:10px;width:100%;margin-bottom:4px">📂 ${b.name}</button>`).join('')}
-        </div>
+        </div>` : ''}
       </div>
-      <div style="display:flex;justify-content:flex-end;margin-top:16px">
+      <div class="modal-actions">
         <button id="importStratCancel">Annuler</button>
       </div>
     </div>`;
-  const modal = document.createElement('div');
-  modal.className = 'modal visible';
-  modal.innerHTML = html;
-  document.body.appendChild(modal);
-  const close = () => modal.remove();
-  modal.addEventListener('click', e => { if (e.target === modal) close(); });
-  modal.querySelector('#importStratCancel').addEventListener('click', close);
-  modal.querySelector('#importStratNew').addEventListener('click', async () => {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-bg visible';
+  overlay.innerHTML = html;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  overlay.querySelector('#importStratCancel').addEventListener('click', close);
+  overlay.querySelector('#importStratNew').addEventListener('click', async () => {
     close();
     try { await importBankFromFile(file, 'new'); }
     catch (e) { showStatus("Erreur : " + e.message, 'error'); }
   });
-  modal.querySelectorAll('.import-merge-btn').forEach(btn => {
+  overlay.querySelectorAll('.import-merge-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const bid = btn.dataset.bank;
       close();
@@ -1505,7 +1539,12 @@ function openImportBankModal(file) {
 
 async function loadPadsForBank(bankId) {
   const all = await dbGetAll(STORE_PADS);
-  state.pads = all.filter(p => p.bankId === bankId).sort((a,b) => (a.order||0) - (b.order||0));
+  if (bankId === FAVORITES_BANK_ID) {
+    // Mode Favoris : tous les pads marqués comme favoris, toutes banques confondues
+    state.pads = all.filter(p => p.favorite).sort((a,b) => (a.favoriteOrder ?? a.order ?? 0) - (b.favoriteOrder ?? b.order ?? 0));
+  } else {
+    state.pads = all.filter(p => p.bankId === bankId).sort((a,b) => (a.order||0) - (b.order||0));
+  }
   ensureAudioCtx();
   for (const pad of state.pads) {
     if (!state.padBuffers.has(pad.id) && pad.blob) {
@@ -1534,9 +1573,16 @@ function renderPads() {
     el.dataset.id = pad.id;
     el.draggable = false;
     const sc = i < 10 ? (i === 9 ? '0' : String(i+1)) : '';
+    // En mode Favoris, on affiche le nom de la banque d'origine
+    let bankBadge = '';
+    if (state.currentBankId === FAVORITES_BANK_ID && !isProject) {
+      const originBank = state.banks.find(b => b.id === pad.bankId);
+      if (originBank) bankBadge = `<div class="pad-badge" style="background:rgba(0,0,0,0.4)">📂 ${escapeHtml(originBank.name)}</div>`;
+    }
     el.innerHTML = `
       ${sc ? `<div class="pad-shortcut">${sc}</div>` : ''}
-      ${isProject ? `<div class="pad-badge">📂 Projet</div>` : ''}
+      ${pad.favorite ? `<div class="pad-fav" title="Favori">⭐</div>` : ''}
+      ${isProject ? `<div class="pad-badge">📂 Projet</div>` : bankBadge}
       <div class="pad-actions">
         <button class="pad-action-btn" data-edit="${pad.id}" title="Modifier">✎</button>
         <button class="pad-action-btn" data-del="${pad.id}" title="Supprimer">×</button>
@@ -1701,12 +1747,18 @@ async function reorderPads(d, t) {
 async function addPad(file, name, color, loop) {
   try {
     ensureAudioCtx();
+    // Si on est en mode Favoris (banque virtuelle), il faut une vraie banque pour stocker le pad.
+    // On prend la première banque "physique" disponible.
+    const targetBankId = state.currentBankId === FAVORITES_BANK_ID
+      ? (state.banks.filter(b => !isProjectBank(b))[0]?.id)
+      : state.currentBankId;
+    if (!targetBankId) { showStatus('Crée une banque avant d\'ajouter des pads.', 'error'); return; }
     const ab = await file.arrayBuffer();
     const blob = new Blob([ab], { type: file.type || 'audio/mpeg' });
     const buf = await state.audioCtx.decodeAudioData(ab.slice(0));
     const pad = {
       id: uid('p'),
-      bankId: state.currentBankId,
+      bankId: targetBankId,
       name: name || file.name.replace(/\.[^/.]+$/, ''),
       color: color || PAD_COLORS[state.pads.length % PAD_COLORS.length],
       loop: !!loop, volume: 1, order: state.pads.length,
@@ -1716,6 +1768,10 @@ async function addPad(file, name, color, loop) {
     state.pads.push(pad);
     state.padBuffers.set(pad.id, buf);
     renderPads();
+    if (state.currentBankId === FAVORITES_BANK_ID) {
+      const targetBank = state.banks.find(b => b.id === targetBankId);
+      showStatus(`Pad ajouté à "${targetBank?.name || 'banque'}" (visible aussi dans Favoris si tu le marques)`, 'info');
+    }
   } catch (e) { showStatus("Impossible de lire ce fichier : " + e.message, 'error'); }
 }
 
@@ -3735,7 +3791,7 @@ function openPadModal(editId) {
   const isEdit = !!editId;
   document.getElementById('modalTitle').textContent = isEdit ? 'Modifier le pad' : 'Ajouter un son';
   document.getElementById('modalOk').textContent = isEdit ? 'Enregistrer' : 'Ajouter';
-  let name = '', color = PAD_COLORS[(state.pads.length + state.projectPads.length) % PAD_COLORS.length], loop = false, currentBankId = state.currentBankId, isProject = false;
+  let name = '', color = PAD_COLORS[(state.pads.length + state.projectPads.length) % PAD_COLORS.length], loop = false, currentBankId = state.currentBankId, isProject = false, favorite = false;
   if (isEdit) {
     const projPad = findProjectPad(editId);
     if (projPad) {
@@ -3743,13 +3799,21 @@ function openPadModal(editId) {
       isProject = true;
     } else {
       const pad = state.pads.find(p => p.id === editId);
-      if (pad) { name = pad.name; color = pad.color; loop = pad.loop; currentBankId = pad.bankId; }
+      if (pad) { name = pad.name; color = pad.color; loop = pad.loop; currentBankId = pad.bankId; favorite = !!pad.favorite; }
     }
   } else if (state.pendingFile) {
     name = state.pendingFile.name.replace(/\.[^/.]+$/, '');
   }
   document.getElementById('modalName').value = name;
   document.getElementById('modalLoop').checked = loop;
+  // Le toggle Favori n'a pas de sens pour les pads de projet (qui ne sont qu'en mémoire)
+  const favRow = document.getElementById('modalFavorite').parentElement;
+  if (isProject) {
+    favRow.style.display = 'none';
+  } else {
+    favRow.style.display = '';
+    document.getElementById('modalFavorite').checked = favorite;
+  }
   state.selectedColor = color;
   renderColorPicker();
   // Sélecteur de banque : uniquement en édition, et liste juste les banques permanentes
@@ -3798,6 +3862,7 @@ document.getElementById('modalCancel').addEventListener('click', () => { documen
 document.getElementById('modalOk').addEventListener('click', async () => {
   const name = document.getElementById('modalName').value.trim() || 'Sans titre';
   const loop = document.getElementById('modalLoop').checked;
+  const favorite = document.getElementById('modalFavorite').checked;
   const color = state.selectedColor;
   if (state.editingPadId) {
     const targetId = state.editingPadId;
@@ -3805,21 +3870,18 @@ document.getElementById('modalOk').addEventListener('click', async () => {
     const permPad = state.pads.find(p => p.id === targetId);
     const newBankSel = document.getElementById('modalBankSelect').value;
     if (projPad) {
-      // Pad de projet
       projPad.name = name; projPad.loop = loop; projPad.color = color;
       if (newBankSel && newBankSel !== '__keep__') {
-        // Promouvoir vers banque permanente
         const buf = state.padBuffers.get(targetId);
         if (buf) {
           const blob = audioBufferToWavBlob(buf);
           const newPad = {
             id: targetId, bankId: newBankSel, name, color, loop, volume: 1,
             order: state.pads.length, blob, duration: projPad.duration,
+            favorite, // ajout : l'utilisateur peut marquer le pad comme favori en le promouvant
           };
           await dbPut(STORE_PADS, newPad);
-          // Retirer de projectPads
           state.projectPads = state.projectPads.filter(p => p.id !== targetId);
-          // Ajouter à state.pads si la banque cible est celle affichée
           if (newBankSel === state.currentBankId) state.pads.push(newPad);
           const targetBank = state.banks.find(b => b.id === newBankSel);
           showStatus(`Pad promu vers "${targetBank?.name || 'banque permanente'}"`, 'success');
@@ -3827,13 +3889,23 @@ document.getElementById('modalOk').addEventListener('click', async () => {
       }
       renderPads();
     } else if (permPad) {
-      // Pad permanent
-      const changes = { name, loop, color };
+      const changes = { name, loop, color, favorite };
+      // Si on passe favori et que ça ne l'était pas, on attribue un ordre favori
+      if (favorite && !permPad.favorite) {
+        // Compter combien de favoris existent déjà pour placer celui-ci en dernier
+        const allPads = await dbGetAll(STORE_PADS);
+        const favCount = allPads.filter(p => p.favorite && p.id !== targetId).length;
+        changes.favoriteOrder = favCount;
+      }
       if (newBankSel && newBankSel !== '__keep__' && newBankSel !== permPad.bankId) {
         changes.bankId = newBankSel;
       }
       await updatePad(targetId, changes);
-      if (changes.bankId && changes.bankId !== state.currentBankId) {
+      const wasInFavoritesView = state.currentBankId === FAVORITES_BANK_ID;
+      if (wasInFavoritesView) {
+        // Recharger la vue favoris (un pad a peut-être été ajouté/retiré)
+        await loadPadsForBank(FAVORITES_BANK_ID);
+      } else if (changes.bankId && changes.bankId !== state.currentBankId) {
         state.pads = state.pads.filter(p => p.id !== targetId);
         renderPads();
         const targetBank = state.banks.find(b => b.id === changes.bankId);
