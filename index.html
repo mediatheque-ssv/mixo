@@ -128,7 +128,14 @@
   .inspector-floating .inspector-control { width: 100%; }
 
   .panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; flex-wrap: wrap; gap: 8px; padding-left: 12px; }
-  .panel-title { font-size: 10px; text-transform: uppercase; letter-spacing: 2.5px; color: var(--brass); font-weight: 700; }
+  .panel-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    color: var(--brass);
+    font-weight: 700;
+    text-shadow: 0 1px 0 rgba(0,0,0,0.6), 0 0 8px rgba(212,175,55,0.2);
+  }
 
   /* Champs : enfoncés dans le métal */
   select, input[type="text"], input[type="number"] {
@@ -199,6 +206,98 @@
   }
   button svg { width: 14px; height: 14px; flex-shrink: 0; }
 
+  /* Boutons de transport : style boutons ronds de console radio */
+  .transport-cluster {
+    display: flex; gap: 14px; align-items: flex-end;
+    padding: 4px 12px 4px 4px;
+  }
+  .transport-btn {
+    position: relative;
+    width: 48px; height: 48px; padding: 0;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    background: radial-gradient(circle at 30% 25%, #5a5550 0%, #3a3833 35%, #1f1d1b 100%);
+    color: var(--brass);
+    display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    box-shadow:
+      inset 0 2px 3px rgba(255,255,255,0.12),
+      inset 0 -3px 6px rgba(0,0,0,0.6),
+      0 3px 6px rgba(0,0,0,0.5),
+      0 1px 0 rgba(255,255,255,0.05);
+    transition: all 0.12s;
+    overflow: visible;
+  }
+  /* Label sous le bouton */
+  .transport-btn::after {
+    content: attr(data-label);
+    position: absolute;
+    top: calc(100% + 4px); left: 50%;
+    transform: translateX(-50%);
+    font-size: 9px; font-weight: 700;
+    color: var(--brass);
+    letter-spacing: 1.5px;
+    text-shadow: 0 1px 0 rgba(0,0,0,0.7);
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .transport-btn svg { width: 18px; height: 18px; }
+  .transport-btn:hover:not(:disabled) {
+    background: radial-gradient(circle at 30% 25%, #6a6560 0%, #4a4540 35%, #2a2825 100%);
+    color: #f4cf60;
+  }
+  .transport-btn:active:not(:disabled) {
+    transform: translateY(1px);
+    box-shadow:
+      inset 0 3px 6px rgba(0,0,0,0.7),
+      0 1px 2px rgba(0,0,0,0.5);
+  }
+  .transport-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  /* REC : gros bouton rouge avec halo */
+  .transport-btn.rec {
+    background: radial-gradient(circle at 30% 25%, #ef5350 0%, #c4342f 35%, #7f1d1d 100%);
+    border-color: #5a0e0b;
+    color: #fff;
+    box-shadow:
+      inset 0 2px 3px rgba(255,255,255,0.25),
+      inset 0 -3px 6px rgba(0,0,0,0.5),
+      0 3px 6px rgba(0,0,0,0.5),
+      0 0 12px rgba(239,68,68,0.25);
+  }
+  .transport-btn.rec::after { color: #ef4444; }
+  .transport-btn.rec:hover:not(:disabled) {
+    background: radial-gradient(circle at 30% 25%, #ff6b5b 0%, #dc2626 35%, #8b1f1a 100%);
+    color: #fff;
+    box-shadow:
+      inset 0 2px 3px rgba(255,255,255,0.3),
+      inset 0 -3px 6px rgba(0,0,0,0.5),
+      0 3px 8px rgba(0,0,0,0.5),
+      0 0 20px rgba(239,68,68,0.5);
+  }
+  /* Recording : pulse rouge brillant */
+  .transport-btn.recording, button.recording {
+    background: radial-gradient(circle at 30% 25%, #ff8a7a 0%, #ef4444 35%, #b91c1c 100%) !important;
+    color: #fff !important;
+    animation: recPulseRound 1.4s infinite;
+  }
+  @keyframes recPulseRound {
+    0%, 100% {
+      box-shadow:
+        inset 0 2px 3px rgba(255,255,255,0.3),
+        inset 0 -3px 6px rgba(0,0,0,0.5),
+        0 3px 6px rgba(0,0,0,0.5),
+        0 0 14px rgba(239,68,68,0.6);
+    }
+    50% {
+      box-shadow:
+        inset 0 2px 3px rgba(255,255,255,0.4),
+        inset 0 -3px 6px rgba(0,0,0,0.5),
+        0 3px 8px rgba(0,0,0,0.5),
+        0 0 28px rgba(239,68,68,1);
+    }
+  }
+
   .mic-row { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
   .mic-row select { flex: 1; min-width: 200px; }
 
@@ -232,7 +331,7 @@
   }
   #waveformLive.visible { display: block; }
 
-  .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding-bottom: 14px; }
   /* Timer : display LCD rouge */
   .timer {
     font-size: 24px; font-weight: 700;
@@ -917,9 +1016,11 @@
   </div>
   <canvas id="waveformLive" width="800" height="60"></canvas>
   <div class="controls">
-    <button id="btnRec" class="danger"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="6"/></svg>Enregistrer</button>
-    <button id="btnPause" disabled><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>Pause</button>
-    <button id="btnStop" disabled><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg>Stop</button>
+    <div class="transport-cluster">
+      <button id="btnRec" class="transport-btn rec" data-label="REC" title="Enregistrer"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="6"/></svg></button>
+      <button id="btnPause" class="transport-btn" data-label="PAUSE" title="Pause" disabled><svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg></button>
+      <button id="btnStop" class="transport-btn" data-label="STOP" title="Stop" disabled><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+    </div>
     <button id="btnImportAudio" title="Importer un fichier audio comme piste voix">📥 Importer un audio</button>
     <button id="btnLoadProject" title="Ouvrir un projet sauvegardé">📂 Projet…</button>
     <div id="timer" class="timer">00:00</div>
@@ -1766,14 +1867,18 @@ function pauseRecording() {
     state.pausedDuration += state.audioCtx.currentTime - state.pausedAt;
     state.startTime = performance.now();
     state.isPaused = false;
-    document.getElementById('btnPause').innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>Pause';
+    const btnP1 = document.getElementById('btnPause');
+    btnP1.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
+    btnP1.setAttribute('data-label', 'PAUSE');
     state.timerInterval = setInterval(updateTimer, 100);
   } else {
     state.micRecorder.pause();
     state.pausedAt = state.audioCtx.currentTime;
     state.elapsedBeforePause += performance.now() - state.startTime;
     state.isPaused = true;
-    document.getElementById('btnPause').innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 20,12 6,20"/></svg>Reprendre';
+    const btnP2 = document.getElementById('btnPause');
+    btnP2.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 20,12 6,20"/></svg>';
+    btnP2.setAttribute('data-label', 'RESUME');
     clearInterval(state.timerInterval);
   }
 }
@@ -1792,7 +1897,9 @@ function stopRecording() {
   document.getElementById('btnRec').classList.remove('recording');
   document.getElementById('btnRec').disabled = false;
   document.getElementById('btnPause').disabled = true;
-  document.getElementById('btnPause').innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>Pause';
+  const btnPause = document.getElementById('btnPause');
+  btnPause.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
+  btnPause.setAttribute('data-label', 'PAUSE');
   document.getElementById('btnStop').disabled = true;
   document.getElementById('timer').classList.remove('live');
   document.getElementById('timer').textContent = '00:00';
