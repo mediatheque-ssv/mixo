@@ -423,8 +423,10 @@
     <div class="mix-menu-wrapper">
       <button id="btnMixVoices" title="Traitement global des voix" aria-haspopup="true">🎚 Voix ▾</button>
       <div id="mixVoicesDropdown" class="bank-menu-dropdown" hidden>
-        <button id="btnMixPreset" class="menu-item" style="font-weight:600;color:#fbbf24">✨ Mix podcast (compresser + normaliser)</button>
+        <button id="btnMixPreset" class="menu-item" style="font-weight:600;color:#fbbf24">✨ Mix podcast (EQ + compresser + normaliser)</button>
         <div class="menu-separator"></div>
+        <button id="btnEqAllVoices" class="menu-item">🎛 Activer EQ sur toutes les voix</button>
+        <button id="btnUneqAllVoices" class="menu-item">○ Désactiver l'EQ</button>
         <button id="btnCompressAllVoices" class="menu-item">🎙 Compresser toutes les voix</button>
         <button id="btnUncompressAllVoices" class="menu-item">○ Désactiver la compression</button>
         <button id="btnNormalizeAllVoices" class="menu-item">🔊 Normaliser toutes les voix</button>
@@ -1159,14 +1161,18 @@ function playMixForOverdub() {
     if (track.id === state.overdubVoiceTrackId) continue;
     if (!trackIsAudible(track)) continue;
     const trackVol = track.volume ?? 1;
-    let trackOut;
+    let trackOut = masterLim;
     if (track.compressed) {
       const comp = createVoiceCompressor(ctx);
-      comp.connect(masterLim);
+      comp.connect(trackOut);
       trackOut = comp;
       state.playback.sources.push(comp);
-    } else {
-      trackOut = masterLim;
+    }
+    if (track.eq) {
+      const eq = createVoiceEQ(ctx);
+      eq.output.connect(trackOut);
+      trackOut = eq.input;
+      state.playback.sources.push(eq.input, eq.output);
     }
     if (track.type === 'voice') {
       for (const clip of track.clips) {
@@ -2086,7 +2092,8 @@ function renderTracks(w) {
       </div>
       <div class="track-head-row" style="gap:3px;margin-top:2px">
         <button class="track-mini-btn" data-normalize="${track.id}" title="Normaliser la piste" style="flex:1;padding:3px 4px;font-size:10px">🔊 Norm.</button>
-        <button class="track-mini-btn ${track.compressed ? 'active' : ''}" data-compress="${track.id}" title="Compression vocale" style="flex:1;padding:3px 4px;font-size:10px">🎙 ${track.compressed ? 'Comp ON' : 'Comp'}</button>
+        <button class="track-mini-btn ${track.eq ? 'active' : ''}" data-eq="${track.id}" title="EQ vocal (passe-haut + boost médium)" style="flex:1;padding:3px 4px;font-size:10px">🎛 EQ</button>
+        <button class="track-mini-btn ${track.compressed ? 'active' : ''}" data-compress="${track.id}" title="Compression vocale" style="flex:1;padding:3px 4px;font-size:10px">🎙 Comp</button>
       </div>
     `;
     trackEl.appendChild(head);
@@ -2145,6 +2152,11 @@ function renderTracks(w) {
     if (compBtn) compBtn.addEventListener('click', e => {
       e.stopPropagation();
       toggleTrackCompression(track.id);
+    });
+    const eqBtn = head.querySelector(`[data-eq="${track.id}"]`);
+    if (eqBtn) eqBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      toggleTrackEQ(track.id);
     });
     const volSlider = head.querySelector(`[data-track-vol="${track.id}"]`);
     volSlider.addEventListener('input', e => {
@@ -3193,6 +3205,16 @@ document.getElementById('btnCompressAllVoices').addEventListener('click', () => 
   const inc = document.getElementById('mixIncludeEvents').checked;
   compressAllTracks(inc);
 });
+document.getElementById('btnEqAllVoices').addEventListener('click', () => {
+  closeMixMenu();
+  const inc = document.getElementById('mixIncludeEvents').checked;
+  eqAllTracks(inc);
+});
+document.getElementById('btnUneqAllVoices').addEventListener('click', () => {
+  closeMixMenu();
+  const inc = document.getElementById('mixIncludeEvents').checked;
+  uneqAllTracks(inc);
+});
 document.getElementById('btnUncompressAllVoices').addEventListener('click', () => {
   closeMixMenu();
   const inc = document.getElementById('mixIncludeEvents').checked;
@@ -3268,6 +3290,26 @@ function createVoiceCompressor(ctx) {
   return c;
 }
 
+// EQ "voix" : chaîne de filtres typique broadcast.
+// 1. Passe-haut à 80 Hz : enlève grondements, vibrations basses du micro, pollutions de fond
+// 2. Boost léger à 3 kHz : ajoute de la clarté, intelligibilité des consonnes
+// Retourne { input, output } pour brancher en série dans la chaîne audio.
+function createVoiceEQ(ctx) {
+  // Passe-haut
+  const hp = ctx.createBiquadFilter();
+  hp.type = 'highpass';
+  hp.frequency.value = 80;
+  hp.Q.value = 0.707;
+  // Boost médium-haut (présence/clarté)
+  const presence = ctx.createBiquadFilter();
+  presence.type = 'peaking';
+  presence.frequency.value = 3000;
+  presence.Q.value = 1.0;
+  presence.gain.value = 3; // +3 dB léger
+  hp.connect(presence);
+  return { input: hp, output: presence };
+}
+
 // Calcule le RMS global d'une piste (moyenne pondérée des RMS des clips/events)
 function computeTrackRMS(track) {
   let sumWeighted = 0, totalDur = 0;
@@ -3299,14 +3341,14 @@ function computeTrackRMS(track) {
   return Math.sqrt(sumWeighted / totalDur);
 }
 
-// Mesure le RMS d'une piste après passage par sa chaîne d'effets (compresseur si activé).
+// Mesure le RMS d'une piste après passage par sa chaîne d'effets (EQ + compresseur si activés).
 // Utilise un OfflineAudioContext pour rendre exactement comme à l'export, puis calcule le RMS du résultat.
-// IMPORTANT : on rend avec track.volume = 1 et SANS limiteur master pour mesurer le vrai RMS post-compression
+// IMPORTANT : on rend avec track.volume = 1 et SANS limiteur master pour mesurer le vrai RMS post-effets
 // sans biais lié au volume actuel ou au limiteur final.
 async function computeTrackRMSWithCompression(track) {
   if (!track) return 0;
-  // Si pas de compression, on tombe sur le RMS brut (rapide, pas de rendu nécessaire)
-  if (!track.compressed) return computeTrackRMS(track);
+  // Si ni compression ni EQ, on tombe sur le RMS brut (rapide, pas de rendu nécessaire)
+  if (!track.compressed && !track.eq) return computeTrackRMS(track);
 
   // Déterminer la durée totale de la piste
   let trackDuration = 0;
@@ -3326,11 +3368,23 @@ async function computeTrackRMSWithCompression(track) {
   const sr = state.audioCtx.sampleRate;
   const offlineCtx = new OfflineAudioContext(1, Math.ceil((trackDuration + 0.2) * sr), sr);
 
-  // Compresseur identique à celui utilisé en preview/export
-  const comp = offlineCtx.createDynamicsCompressor();
-  comp.threshold.value = -22; comp.knee.value = 6; comp.ratio.value = 4;
-  comp.attack.value = 0.003; comp.release.value = 0.25;
-  comp.connect(offlineCtx.destination);
+  // Construire la chaîne EQ → compresseur → destination, en partant de la fin
+  let chainHead = offlineCtx.destination;
+  if (track.compressed) {
+    const comp = offlineCtx.createDynamicsCompressor();
+    comp.threshold.value = -22; comp.knee.value = 6; comp.ratio.value = 4;
+    comp.attack.value = 0.003; comp.release.value = 0.25;
+    comp.connect(chainHead);
+    chainHead = comp;
+  }
+  if (track.eq) {
+    const hp = offlineCtx.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = 80; hp.Q.value = 0.707;
+    const presence = offlineCtx.createBiquadFilter();
+    presence.type = 'peaking'; presence.frequency.value = 3000; presence.Q.value = 1.0; presence.gain.value = 3;
+    hp.connect(presence); presence.connect(chainHead);
+    chainHead = hp;
+  }
 
   if (track.type === 'voice') {
     for (const clip of track.clips) {
@@ -3342,8 +3396,8 @@ async function computeTrackRMSWithCompression(track) {
       const src = offlineCtx.createBufferSource();
       src.buffer = buf;
       const g = offlineCtx.createGain();
-      g.gain.value = (clip.volume ?? 1); // pas trackVol (on veut le RMS pré-volume-piste)
-      src.connect(g); g.connect(comp);
+      g.gain.value = (clip.volume ?? 1);
+      src.connect(g); g.connect(chainHead);
       src.start(clip.time, clip.sourceStart, clipDur);
     }
   } else {
@@ -3356,14 +3410,12 @@ async function computeTrackRMSWithCompression(track) {
       src.buffer = buf;
       const g = offlineCtx.createGain();
       g.gain.value = (ev.volume ?? 1);
-      src.connect(g); g.connect(comp);
+      src.connect(g); g.connect(chainHead);
       src.start(ev.time, ev.sourceStart, ev.duration);
     }
   }
 
   const rendered = await offlineCtx.startRendering();
-  // Calculer RMS uniquement sur les portions où il y a vraiment du son
-  // (sinon le silence inter-clips fait baisser artificiellement la moyenne)
   return computeRMSOnActiveZones(rendered, track);
 }
 
@@ -3402,15 +3454,14 @@ function computeRMSOnActiveZones(buffer, track) {
 async function normalizeTrack(trackId) {
   const track = findTrack(trackId);
   if (!track) return;
-  // Si la piste est compressée, faire un rendu offline pour mesurer le RMS réel après compression.
-  // Sinon, calcul rapide direct.
+  // Si la piste a des effets activés (EQ ou compression), faire un rendu offline pour mesurer le RMS réel
   let rms;
-  if (track.compressed) {
-    showStatus('Analyse du signal compressé…', 'info');
+  if (track.compressed || track.eq) {
+    showStatus('Analyse du signal avec effets…', 'info');
     try {
       rms = await computeTrackRMSWithCompression(track);
     } catch (e) {
-      console.warn('Mesure RMS post-compression échouée, fallback RMS brut', e);
+      console.warn('Mesure RMS post-effets échouée, fallback RMS brut', e);
       rms = computeTrackRMS(track);
     }
   } else {
@@ -3422,7 +3473,10 @@ async function normalizeTrack(trackId) {
   pushHistory();
   renderTimeline();
   const db = (linearToDb(gain)).toFixed(1);
-  const suffix = track.compressed ? ' (avec compression)' : '';
+  const effects = [];
+  if (track.eq) effects.push('EQ');
+  if (track.compressed) effects.push('compression');
+  const suffix = effects.length > 0 ? ` (avec ${effects.join(' + ')})` : '';
   showStatus(`"${track.name}" normalisée (gain ${db > 0 ? '+' : ''}${db} dB)${suffix}`, 'success');
 }
 
@@ -3433,6 +3487,15 @@ function toggleTrackCompression(trackId) {
   pushHistory();
   renderTimeline();
   showStatus(`Compression ${track.compressed ? 'activée' : 'désactivée'} sur "${track.name}"`, 'info');
+}
+
+function toggleTrackEQ(trackId) {
+  const track = findTrack(trackId);
+  if (!track) return;
+  track.eq = !track.eq;
+  pushHistory();
+  renderTimeline();
+  showStatus(`EQ vocal ${track.eq ? 'activé' : 'désactivé'} sur "${track.name}"`, 'info');
 }
 
 // Actions globales sur l'ensemble des pistes voix (et optionnellement bruitages)
@@ -3454,6 +3517,38 @@ function compressAllTracks(includeEvents = false) {
     showStatus(`Compression activée sur ${changed} piste${changed > 1 ? 's' : ''}`, 'success');
   } else {
     showStatus("Toutes ces pistes étaient déjà compressées.", 'info');
+  }
+}
+
+function eqAllTracks(includeEvents = false) {
+  const tracks = getTargetTracksForGlobalAction(includeEvents);
+  if (tracks.length === 0) { showStatus("Aucune piste éligible.", 'info'); return; }
+  let changed = 0;
+  for (const t of tracks) {
+    if (!t.eq) { t.eq = true; changed++; }
+  }
+  if (changed > 0) {
+    pushHistory();
+    renderTimeline();
+    showStatus(`EQ vocal activé sur ${changed} piste${changed > 1 ? 's' : ''}`, 'success');
+  } else {
+    showStatus("Toutes ces pistes avaient déjà l'EQ.", 'info');
+  }
+}
+
+function uneqAllTracks(includeEvents = false) {
+  const tracks = getTargetTracksForGlobalAction(includeEvents);
+  if (tracks.length === 0) { showStatus("Aucune piste éligible.", 'info'); return; }
+  let changed = 0;
+  for (const t of tracks) {
+    if (t.eq) { t.eq = false; changed++; }
+  }
+  if (changed > 0) {
+    pushHistory();
+    renderTimeline();
+    showStatus(`EQ désactivé sur ${changed} piste${changed > 1 ? 's' : ''}`, 'success');
+  } else {
+    showStatus("Aucune piste n'avait l'EQ.", 'info');
   }
 }
 
@@ -3480,9 +3575,8 @@ async function normalizeAllTracks(includeEvents = false) {
   let done = 0;
   for (const t of tracks) {
     try {
-      // Calcul du RMS (avec compression si activée)
       let rms;
-      if (t.compressed) {
+      if (t.compressed || t.eq) {
         rms = await computeTrackRMSWithCompression(t);
       } else {
         rms = computeTrackRMS(t);
@@ -3500,14 +3594,14 @@ async function normalizeAllTracks(includeEvents = false) {
   showStatus(`${done} piste${done > 1 ? 's' : ''} normalisée${done > 1 ? 's' : ''}`, 'success');
 }
 
-// Preset "Mix podcast" : compresse puis normalise toutes les voix (et optionnellement bruitages)
+// Preset "Mix podcast" : active EQ + compression puis normalise toutes les voix (et optionnellement bruitages)
 async function applyMixPreset(includeEvents = false) {
   const tracks = getTargetTracksForGlobalAction(includeEvents);
   if (tracks.length === 0) { showStatus("Aucune piste éligible.", 'info'); return; }
   showStatus(`Mix podcast : traitement de ${tracks.length} piste${tracks.length > 1 ? 's' : ''}…`, 'info');
-  // 1. Activer compression sur toutes les pistes ciblées
-  for (const t of tracks) t.compressed = true;
-  // 2. Normaliser chaque piste (le calcul prendra en compte la compression activée juste avant)
+  // 1. Activer EQ et compression sur toutes les pistes ciblées
+  for (const t of tracks) { t.eq = true; t.compressed = true; }
+  // 2. Normaliser chaque piste (le calcul tiendra compte des effets activés)
   let done = 0;
   for (const t of tracks) {
     try {
@@ -3522,7 +3616,7 @@ async function applyMixPreset(includeEvents = false) {
   }
   pushHistory();
   renderTimeline();
-  showStatus(`✨ Mix podcast appliqué sur ${done} piste${done > 1 ? 's' : ''} (compression + normalisation)`, 'success');
+  showStatus(`✨ Mix podcast appliqué sur ${done} piste${done > 1 ? 's' : ''} (EQ + compression + normalisation)`, 'success');
 }
 
 function normalizeClipOrEvent(id, kind) {
@@ -3574,15 +3668,19 @@ function playMix() {
   for (const track of state.take.tracks) {
     if (!trackIsAudible(track)) continue;
     const trackVol = track.volume ?? 1;
-    // Préparer le nœud de sortie de cette piste : compresseur optionnel puis master
-    let trackOut;
+    // Préparer le nœud de sortie de cette piste : EQ → compresseur → master (les étapes activées seulement)
+    let trackOut = masterLim;
     if (track.compressed) {
       const comp = createVoiceCompressor(ctx);
-      comp.connect(masterLim);
+      comp.connect(trackOut);
       trackOut = comp;
-      state.playback.sources.push(comp); // pour pouvoir disconnect au stop
-    } else {
-      trackOut = masterLim;
+      state.playback.sources.push(comp);
+    }
+    if (track.eq) {
+      const eq = createVoiceEQ(ctx);
+      eq.output.connect(trackOut);
+      trackOut = eq.input;
+      state.playback.sources.push(eq.input, eq.output);
     }
 
     if (track.type === 'voice') {
@@ -3758,16 +3856,22 @@ async function exportMix() {
     for (const track of state.take.tracks) {
       if (!trackIsAudible(track)) continue;
       const trackVol = track.volume ?? 1;
-      // Bus de piste : compresseur optionnel puis master
-      let trackOut;
+      // Bus de piste : EQ → compresseur → master (étapes activées seulement)
+      let trackOut = masterLim;
       if (track.compressed) {
         const comp = offlineCtx.createDynamicsCompressor();
         comp.threshold.value = -22; comp.knee.value = 6; comp.ratio.value = 4;
         comp.attack.value = 0.003; comp.release.value = 0.25;
-        comp.connect(masterLim);
+        comp.connect(trackOut);
         trackOut = comp;
-      } else {
-        trackOut = masterLim;
+      }
+      if (track.eq) {
+        const hp = offlineCtx.createBiquadFilter();
+        hp.type = 'highpass'; hp.frequency.value = 80; hp.Q.value = 0.707;
+        const presence = offlineCtx.createBiquadFilter();
+        presence.type = 'peaking'; presence.frequency.value = 3000; presence.Q.value = 1.0; presence.gain.value = 3;
+        hp.connect(presence); presence.connect(trackOut);
+        trackOut = hp;
       }
 
       if (track.type === 'voice') {
