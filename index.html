@@ -940,13 +940,18 @@ function startVuMeter() {
   const ctx = canvas.getContext('2d');
   const buf = new Uint8Array(state.micAnalyser.fftSize);
   function resize() {
-    canvas.width = canvas.clientWidth * window.devicePixelRatio;
-    canvas.height = canvas.clientHeight * window.devicePixelRatio;
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.max(1, canvas.clientWidth);
+    const h = Math.max(1, canvas.clientHeight);
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
     // Reset l'historique au resize
     state.liveWaveHistory = null;
   }
   resize();
   window.addEventListener('resize', resize);
+  // Exposé sur l'état pour qu'on puisse rappeler au démarrage de l'enregistrement
+  state.liveWaveResize = resize;
 
   // Historique des amplitudes (une par frame). On dessine une barre par échantillon.
   // Stockés en paire [min, max] de chaque frame pour des barres "verticales" centrées.
@@ -1071,6 +1076,8 @@ async function startRecording() {
   document.getElementById('btnStop').disabled = false;
   document.getElementById('timer').classList.add('live');
   document.getElementById('waveformLive').classList.add('visible');
+  // Forcer le re-calcul de la taille du canvas maintenant qu'il est visible
+  if (state.liveWaveResize) state.liveWaveResize();
   // Ne pas cacher l'éditeur si on est en overdub : on veut voir la timeline
   if (!inOverdub) document.getElementById('editorPanel').classList.add('hidden');
 
