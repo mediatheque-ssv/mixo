@@ -137,7 +137,7 @@
   .pad-fav.is-active:hover { transform: scale(1.15); background: rgba(0,0,0,0.55); }
 
   /* Menu déroulant actions banque */
-  .bank-menu-wrapper { position: relative; }
+  .bank-menu-wrapper, .mix-menu-wrapper { position: relative; display: inline-block; }
   .bank-menu-dropdown {
     position: absolute; top: calc(100% + 4px); right: 0;
     background: #1c1f27; border: 1px solid #2a2f3a; border-radius: 8px;
@@ -420,6 +420,20 @@
     <button id="btnPlayMix" class="primary"><svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 20,12 6,20"/></svg>Lecture</button>
     <button id="btnStopMix" disabled><svg viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg>Stop</button>
     <button id="btnSplitHere" title="Scinder le clip voix au curseur (S)">✂ Scinder</button>
+    <div class="mix-menu-wrapper">
+      <button id="btnMixVoices" title="Traitement global des voix" aria-haspopup="true">🎚 Voix ▾</button>
+      <div id="mixVoicesDropdown" class="bank-menu-dropdown" hidden>
+        <button id="btnMixPreset" class="menu-item" style="font-weight:600;color:#fbbf24">✨ Mix podcast (compresser + normaliser)</button>
+        <div class="menu-separator"></div>
+        <button id="btnCompressAllVoices" class="menu-item">🎙 Compresser toutes les voix</button>
+        <button id="btnUncompressAllVoices" class="menu-item">○ Désactiver la compression</button>
+        <button id="btnNormalizeAllVoices" class="menu-item">🔊 Normaliser toutes les voix</button>
+        <div class="menu-separator"></div>
+        <label class="menu-item" style="cursor:pointer">
+          <input type="checkbox" id="mixIncludeEvents" style="margin-right:6px"> Inclure les bruitages
+        </label>
+      </div>
+    </div>
     <button id="btnSaveProject" title="Sauvegarder le projet (Ctrl+S)">💾 Sauvegarder</button>
     <button id="btnExportMix" class="primary"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2v13M5 12l7 7 7-7M5 22h14" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>Exporter MP3</button>
     <button id="btnDiscardTake">Nouvelle prise</button>
@@ -3153,6 +3167,44 @@ function doSplit(track, clip, t) {
   track.clips.splice(idx, 1, left, right);
 }
 document.getElementById('btnSplitHere').addEventListener('click', splitAtPlayhead);
+
+// === Menu mixage voix ===
+function closeMixMenu() {
+  document.getElementById('mixVoicesDropdown').hidden = true;
+}
+document.getElementById('btnMixVoices').addEventListener('click', e => {
+  e.stopPropagation();
+  const dd = document.getElementById('mixVoicesDropdown');
+  dd.hidden = !dd.hidden;
+});
+document.addEventListener('click', e => {
+  const dd = document.getElementById('mixVoicesDropdown');
+  if (dd && !dd.hidden && !e.target.closest('.mix-menu-wrapper')) {
+    dd.hidden = true;
+  }
+});
+document.getElementById('btnMixPreset').addEventListener('click', async () => {
+  closeMixMenu();
+  const inc = document.getElementById('mixIncludeEvents').checked;
+  await applyMixPreset(inc);
+});
+document.getElementById('btnCompressAllVoices').addEventListener('click', () => {
+  closeMixMenu();
+  const inc = document.getElementById('mixIncludeEvents').checked;
+  compressAllTracks(inc);
+});
+document.getElementById('btnUncompressAllVoices').addEventListener('click', () => {
+  closeMixMenu();
+  const inc = document.getElementById('mixIncludeEvents').checked;
+  uncompressAllTracks(inc);
+});
+document.getElementById('btnNormalizeAllVoices').addEventListener('click', async () => {
+  closeMixMenu();
+  const inc = document.getElementById('mixIncludeEvents').checked;
+  await normalizeAllTracks(inc);
+});
+// Empêcher le clic sur le label/checkbox de fermer le menu
+document.getElementById('mixIncludeEvents').parentElement.addEventListener('click', e => e.stopPropagation());
 document.getElementById('btnUndo').addEventListener('click', undo);
 document.getElementById('btnRedo').addEventListener('click', redo);
 document.getElementById('btnAddVoiceTrack').addEventListener('click', () => addNewTrack('voice'));
@@ -3381,6 +3433,96 @@ function toggleTrackCompression(trackId) {
   pushHistory();
   renderTimeline();
   showStatus(`Compression ${track.compressed ? 'activée' : 'désactivée'} sur "${track.name}"`, 'info');
+}
+
+// Actions globales sur l'ensemble des pistes voix (et optionnellement bruitages)
+function getTargetTracksForGlobalAction(includeEvents) {
+  if (!state.take) return [];
+  return state.take.tracks.filter(t => t.type === 'voice' || (includeEvents && t.type === 'events'));
+}
+
+function compressAllTracks(includeEvents = false) {
+  const tracks = getTargetTracksForGlobalAction(includeEvents);
+  if (tracks.length === 0) { showStatus("Aucune piste éligible.", 'info'); return; }
+  let changed = 0;
+  for (const t of tracks) {
+    if (!t.compressed) { t.compressed = true; changed++; }
+  }
+  if (changed > 0) {
+    pushHistory();
+    renderTimeline();
+    showStatus(`Compression activée sur ${changed} piste${changed > 1 ? 's' : ''}`, 'success');
+  } else {
+    showStatus("Toutes ces pistes étaient déjà compressées.", 'info');
+  }
+}
+
+function uncompressAllTracks(includeEvents = false) {
+  const tracks = getTargetTracksForGlobalAction(includeEvents);
+  if (tracks.length === 0) { showStatus("Aucune piste éligible.", 'info'); return; }
+  let changed = 0;
+  for (const t of tracks) {
+    if (t.compressed) { t.compressed = false; changed++; }
+  }
+  if (changed > 0) {
+    pushHistory();
+    renderTimeline();
+    showStatus(`Compression désactivée sur ${changed} piste${changed > 1 ? 's' : ''}`, 'success');
+  } else {
+    showStatus("Aucune piste n'était compressée.", 'info');
+  }
+}
+
+async function normalizeAllTracks(includeEvents = false) {
+  const tracks = getTargetTracksForGlobalAction(includeEvents);
+  if (tracks.length === 0) { showStatus("Aucune piste éligible.", 'info'); return; }
+  showStatus(`Normalisation en cours (${tracks.length} piste${tracks.length > 1 ? 's' : ''})…`, 'info');
+  let done = 0;
+  for (const t of tracks) {
+    try {
+      // Calcul du RMS (avec compression si activée)
+      let rms;
+      if (t.compressed) {
+        rms = await computeTrackRMSWithCompression(t);
+      } else {
+        rms = computeTrackRMS(t);
+      }
+      if (rms > 0) {
+        t.volume = normalizationGainFromRMS(rms);
+        done++;
+      }
+    } catch (e) {
+      console.warn("Erreur normalisation piste", t.name, e);
+    }
+  }
+  pushHistory();
+  renderTimeline();
+  showStatus(`${done} piste${done > 1 ? 's' : ''} normalisée${done > 1 ? 's' : ''}`, 'success');
+}
+
+// Preset "Mix podcast" : compresse puis normalise toutes les voix (et optionnellement bruitages)
+async function applyMixPreset(includeEvents = false) {
+  const tracks = getTargetTracksForGlobalAction(includeEvents);
+  if (tracks.length === 0) { showStatus("Aucune piste éligible.", 'info'); return; }
+  showStatus(`Mix podcast : traitement de ${tracks.length} piste${tracks.length > 1 ? 's' : ''}…`, 'info');
+  // 1. Activer compression sur toutes les pistes ciblées
+  for (const t of tracks) t.compressed = true;
+  // 2. Normaliser chaque piste (le calcul prendra en compte la compression activée juste avant)
+  let done = 0;
+  for (const t of tracks) {
+    try {
+      const rms = await computeTrackRMSWithCompression(t);
+      if (rms > 0) {
+        t.volume = normalizationGainFromRMS(rms);
+        done++;
+      }
+    } catch (e) {
+      console.warn("Erreur mix podcast piste", t.name, e);
+    }
+  }
+  pushHistory();
+  renderTimeline();
+  showStatus(`✨ Mix podcast appliqué sur ${done} piste${done > 1 ? 's' : ''} (compression + normalisation)`, 'success');
 }
 
 function normalizeClipOrEvent(id, kind) {
