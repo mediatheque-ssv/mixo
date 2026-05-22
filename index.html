@@ -2753,6 +2753,11 @@ function renderInspector() {
   const currentSelKey = state.selectedKind + ':' + state.selectedId;
   if (state.inspectorDismissedFor !== currentSelKey) {
     state.inspectorDismissedFor = null;
+    // Reset du flag drag : on veut repositionner intelligemment à chaque nouvelle sélection
+    if (state.lastInspectorSelKey !== currentSelKey) {
+      state.inspectorWasDragged = false;
+      state.lastInspectorSelKey = currentSelKey;
+    }
     showFloatingInspector();
   }
   let item, label, color;
@@ -4845,10 +4850,11 @@ function setupLayoutResizer() {
 // ===================== Panneau flottant Inspecteur =====================
 function showFloatingInspector() {
   const fp = document.getElementById('inspectorFloating');
-  if (!fp || !fp.hidden) return;
+  if (!fp) return;
   fp.hidden = false;
-  // Position par défaut : à droite près de la sélection si possible, sinon coin haut-droite
-  positionFloatingInspectorNearSelection();
+  // Repositionner à chaque appel (même si déjà visible) : utile quand on change de sélection
+  // Différer pour laisser au navigateur le temps de mesurer les dimensions du panneau
+  requestAnimationFrame(() => positionFloatingInspectorNearSelection());
 }
 function hideFloatingInspector() {
   const fp = document.getElementById('inspectorFloating');
