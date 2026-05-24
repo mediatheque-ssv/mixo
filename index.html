@@ -1058,6 +1058,99 @@
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 1px 0 rgba(0,0,0,0.4);
   }
 
+  /* === MODE PRÉSENTATEUR === */
+  body.presenter-mode { overflow: hidden; padding: 0; display: flex; flex-direction: column; min-height: 100vh; max-height: 100vh; }
+  body.presenter-mode .header,
+  body.presenter-mode #editorPanel,
+  body.presenter-mode #exportsPanel,
+  body.presenter-mode .resizer-vertical,
+  body.presenter-mode .mic-row select,
+  body.presenter-mode .mic-row .vu-container,
+  body.presenter-mode #monitoringPanel {
+    display: none !important;
+  }
+  body.presenter-mode .panel {
+    background: transparent; border: none; box-shadow: none;
+    margin: 0; padding: 0;
+  }
+  body.presenter-mode .panel::before,
+  body.presenter-mode .panel::after { display: none; }
+  body.presenter-mode #micPanel {
+    display: flex; flex-direction: column; align-items: center;
+    padding: 24px 24px 12px !important;
+  }
+  body.presenter-mode #micPanel .panel-header { display: none; }
+  body.presenter-mode #micPanel .mic-row {
+    width: 100%; max-width: 900px; margin: 0;
+    justify-content: center; gap: 24px;
+  }
+  body.presenter-mode #waveformLive {
+    max-width: 900px;
+    margin: 0 auto 12px;
+    height: 80px;
+  }
+  body.presenter-mode .controls {
+    justify-content: center;
+    padding: 0 0 28px 0;
+    gap: 28px;
+    align-items: center;
+  }
+  body.presenter-mode .transport-cluster { gap: 28px; padding: 0; }
+  body.presenter-mode .transport-btn { width: 80px; height: 80px; }
+  body.presenter-mode .transport-btn svg { width: 32px; height: 32px; }
+  body.presenter-mode .transport-btn::after {
+    font-size: 13px;
+    top: calc(100% + 8px);
+    letter-spacing: 2px;
+  }
+  body.presenter-mode #btnImportAudio,
+  body.presenter-mode #btnLoadProject { display: none; }
+  body.presenter-mode .timer {
+    font-size: 44px;
+    min-width: 220px;
+    padding: 12px 24px;
+    margin-left: 0;
+    letter-spacing: 6px;
+  }
+  body.presenter-mode #padsPanel {
+    padding: 12px 32px !important;
+    flex: 1; min-height: 0;
+    display: flex; flex-direction: column;
+  }
+  body.presenter-mode #padsPanel .panel-header {
+    display: flex !important;
+    justify-content: center; align-items: center;
+    padding: 4px 0 12px;
+  }
+  body.presenter-mode #padsPanel .panel-title { display: none !important; }
+  body.presenter-mode #padsPanel .bank-row { justify-content: center; }
+  body.presenter-mode #padsPanel .bank-row select { font-size: 16px; min-width: 240px; }
+  body.presenter-mode #padsGrid {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)) !important;
+    gap: 18px;
+    flex: 1;
+    align-content: start;
+    padding-right: 0;
+  }
+  body.presenter-mode .pad { min-height: 140px; }
+  body.presenter-mode .pad-name { font-size: 16px; }
+  body.presenter-mode .pad-duration { font-size: 12px; }
+  body.presenter-mode .pad-shortcut {
+    font-size: 14px;
+    padding: 3px 8px;
+    top: 8px; left: 8px;
+  }
+  body.presenter-mode #status.visible {
+    margin: 0 24px 8px; flex-shrink: 0;
+  }
+  /* Bouton retour fixé en bas à droite */
+  .presenter-exit {
+    position: fixed; bottom: 24px; right: 24px;
+    z-index: 500; display: none !important;
+    font-size: 14px;
+  }
+  body.presenter-mode .presenter-exit { display: inline-flex !important; }
+
   body.file-dragover::after {
     content: '📥  Lâche le fichier pour l\'importer';
     position: fixed;
@@ -1095,13 +1188,14 @@
     <div class="subtitle">Voix multi-clips, bruitages drag&drop, édition timeline complète</div>
   </div>
   <div class="header-right">
+    <button id="btnPresenterMode" title="Mode présentateur plein écran (F11)">Mode présentateur</button>
     <button id="btnHelp" class="icon-only" title="Aide">?</button>
   </div>
 </div>
 
 <div id="status" class="status"></div>
 
-<div class="panel">
+<div class="panel" id="micPanel">
   <div class="panel-header"><div class="panel-title">Microphone</div></div>
   <div class="mic-row">
     <select id="micSelect"><option>Chargement…</option></select>
@@ -1120,7 +1214,7 @@
   </div>
 </div>
 
-<div class="panel">
+<div class="panel" id="monitoringPanel">
   <div class="panel-header">
     <div class="panel-title">Monitoring live</div>
     <div style="font-size: 11px; color: var(--text-dim); font-style: italic;">Volumes d'écoute pendant l'enregistrement — n'affecte pas le mix final</div>
@@ -5138,6 +5232,36 @@ document.addEventListener('click', e => {
 });
 
 document.getElementById('btnHelp').addEventListener('click', () => document.getElementById('helpModal').classList.add('visible'));
+
+// === Mode présentateur ===
+function enterPresenterMode() {
+  document.body.classList.add('presenter-mode');
+  // Tenter le fullscreen API si dispo
+  if (document.documentElement.requestFullscreen) {
+    document.documentElement.requestFullscreen().catch(() => {});
+  }
+}
+function exitPresenterMode() {
+  document.body.classList.remove('presenter-mode');
+  if (document.fullscreenElement && document.exitFullscreen) {
+    document.exitFullscreen().catch(() => {});
+  }
+}
+document.getElementById('btnPresenterMode').addEventListener('click', enterPresenterMode);
+document.getElementById('btnExitPresenter').addEventListener('click', exitPresenterMode);
+// Raccourci : F11 toggle, Échap quitte
+document.addEventListener('keydown', e => {
+  if (e.key === 'F11') {
+    e.preventDefault();
+    if (document.body.classList.contains('presenter-mode')) exitPresenterMode();
+    else enterPresenterMode();
+  } else if (e.key === 'Escape' && document.body.classList.contains('presenter-mode')) {
+    // Échap quitte le mode présentateur, sauf si une modal est ouverte
+    if (!document.querySelector('.modal-bg.visible')) {
+      exitPresenterMode();
+    }
+  }
+});
 document.getElementById('helpModalClose').addEventListener('click', () => document.getElementById('helpModal').classList.remove('visible'));
 
 // ===================== Bindings micro/transport/volumes/fichier =====================
@@ -6214,5 +6338,7 @@ async function offerResumeAutoSave() {
   }
 })();
 </script>
+
+<button id="btnExitPresenter" class="presenter-exit" title="Revenir au mode normal (Échap)">← Quitter le mode présentateur</button>
 </body>
 </html>
