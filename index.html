@@ -3128,8 +3128,52 @@ function setupVoiceClipInteraction(el, clip, track) {
   let drag = null;
   function onHandleDown(e) {
     if (e.button !== undefined && e.button !== 0) return;
+    const isCtrl = e.ctrlKey || e.metaKey;
+    const fromName = e.target.closest('.voice-clip-name');
+    // Si Ctrl+clic OU clic sur le nom : on ne démarre le drag qu'au mouvement.
+    // Sans mouvement : Ctrl+clic ouvre l'inspecteur, clic simple sur le nom passe en édition (dblclick).
+    if (isCtrl || fromName) {
+      const startX0 = e.clientX, startY0 = e.clientY;
+      let armed = true;
+      const onArmedMove = (ev) => {
+        if (!armed) return;
+        if (Math.abs(ev.clientX - startX0) < 4 && Math.abs(ev.clientY - startY0) < 4) return;
+        armed = false;
+        document.removeEventListener('mousemove', onArmedMove);
+        document.removeEventListener('mouseup', onArmedUp);
+        startDrag(ev);
+      };
+      const onArmedUp = (ev) => {
+        if (!armed) return;
+        armed = false;
+        document.removeEventListener('mousemove', onArmedMove);
+        document.removeEventListener('mouseup', onArmedUp);
+        // Pas de mouvement détecté : c'était un simple clic
+        if (isCtrl) {
+          // Ctrl+clic sans drag : sélectionner et ouvrir l'inspecteur
+          state.selectedKind = 'voice';
+          state.selectedId = clip.id;
+          state.activeTrackId = track.id;
+          state.voiceSelection = null;
+          state.inspectorRequestedFor = 'voice:' + clip.id;
+          state.inspectorDismissedFor = null;
+          renderTimeline();
+        }
+        // Si fromName sans Ctrl : laissons le navigateur gérer (dblclick possible)
+      };
+      document.addEventListener('mousemove', onArmedMove);
+      document.addEventListener('mouseup', onArmedUp);
+      return;
+    }
+    startDrag(e);
+  }
+  function startDrag(e) {
     e.preventDefault();
     e.stopPropagation();
+    // Drag du clip = clic simple sur la barre laiton : reset l'éventuelle "request" précédente
+    if (state.inspectorRequestedFor === 'voice:' + clip.id) {
+      state.inspectorRequestedFor = null;
+    }
     drag = {
       startX: e.clientX,
       startY: e.clientY,
@@ -3214,6 +3258,8 @@ function setupVoiceClipInteraction(el, clip, track) {
   let sel = null;
   function onBodyDown(e) {
     if (e.target.dataset.del || e.target.dataset.handle) return;
+    // Ignorer aussi tous les clics à l'intérieur de la barre laiton (handle + nom du clip)
+    if (e.target.closest('.voice-clip-handle')) return;
     if (e.button !== undefined && e.button !== 0) return;
     e.preventDefault();
     // Ctrl+clic (ou Cmd+clic) sur le corps : ouvrir l'inspecteur, ne pas démarrer une sélection
@@ -3226,6 +3272,10 @@ function setupVoiceClipInteraction(el, clip, track) {
       state.inspectorDismissedFor = null;
       renderTimeline();
       return;
+    }
+    // Clic simple : pas d'inspecteur. On reset la "request" précédente s'il y en avait une pour ce clip.
+    if (state.inspectorRequestedFor === 'voice:' + clip.id) {
+      state.inspectorRequestedFor = null;
     }
     // Position depuis l'origine de la timeline (corps du clip)
     const startT = mouseToTimelineX(e.clientX);
@@ -3391,6 +3441,11 @@ function renderEventsInTrack(container, track) {
       if (e.ctrlKey || e.metaKey) {
         state.inspectorRequestedFor = 'event:' + ev.id;
         state.inspectorDismissedFor = null;
+      } else {
+        // Clic simple : reset l'éventuelle request précédente sur cet event
+        if (state.inspectorRequestedFor === 'event:' + ev.id) {
+          state.inspectorRequestedFor = null;
+        }
       }
       renderTimeline();
     });
