@@ -1126,15 +1126,21 @@
   body.presenter-mode #padsPanel .bank-row { justify-content: center; }
   body.presenter-mode #padsPanel .bank-row select { font-size: 16px; min-width: 240px; }
   body.presenter-mode #padsGrid {
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)) !important;
-    gap: 18px;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)) !important;
+    grid-auto-rows: 1fr;
+    gap: 14px;
     flex: 1;
-    align-content: start;
+    align-content: stretch;
     padding-right: 0;
+    overflow: hidden;
   }
-  body.presenter-mode .pad { min-height: 140px; }
-  body.presenter-mode .pad-name { font-size: 16px; }
-  body.presenter-mode .pad-duration { font-size: 12px; }
+  body.presenter-mode .pad {
+    aspect-ratio: auto !important;
+    min-height: 0;
+    height: 100%;
+  }
+  body.presenter-mode .pad-name { font-size: 18px; }
+  body.presenter-mode .pad-duration { font-size: 13px; }
   body.presenter-mode .pad-shortcut {
     font-size: 14px;
     padding: 3px 8px;
