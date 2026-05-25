@@ -5296,20 +5296,35 @@ function adjustPresenterPadsPosition() {
 }
 function enterPresenterMode() {
   document.body.classList.add('presenter-mode');
+  // Le resizer du mode normal pose des minHeight/maxHeight inline sur #padsGrid qui
+  // empêchent le grid de prendre toute la place en mode présentateur. On les retire ici.
+  const padsGrid = document.getElementById('padsGrid');
+  if (padsGrid) {
+    padsGrid.dataset.savedMinHeight = padsGrid.style.minHeight;
+    padsGrid.dataset.savedMaxHeight = padsGrid.style.maxHeight;
+    padsGrid.style.minHeight = '';
+    padsGrid.style.maxHeight = '';
+  }
   if (document.documentElement.requestFullscreen) {
     document.documentElement.requestFullscreen().catch(() => {});
   }
-  // Différer pour laisser le navigateur appliquer les styles d'abord
   requestAnimationFrame(() => {
     adjustPresenterPadsPosition();
-    // Re-ajuster une deuxième fois après stabilisation des layouts
     setTimeout(adjustPresenterPadsPosition, 50);
   });
 }
 function exitPresenterMode() {
   document.body.classList.remove('presenter-mode');
   document.getElementById('padsPanel').style.top = '';
-  document.getElementById('padsGrid').style.height = '';
+  const padsGrid = document.getElementById('padsGrid');
+  if (padsGrid) {
+    padsGrid.style.height = '';
+    // Restaurer les hauteurs du mode normal
+    padsGrid.style.minHeight = padsGrid.dataset.savedMinHeight || '';
+    padsGrid.style.maxHeight = padsGrid.dataset.savedMaxHeight || '';
+    delete padsGrid.dataset.savedMinHeight;
+    delete padsGrid.dataset.savedMaxHeight;
+  }
   if (document.fullscreenElement && document.exitFullscreen) {
     document.exitFullscreen().catch(() => {});
   }
