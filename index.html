@@ -1135,20 +1135,18 @@
   body.presenter-mode #padsPanel .bank-row { justify-content: center; }
   body.presenter-mode #padsPanel .bank-row select { font-size: 16px; min-width: 240px; }
   body.presenter-mode #padsGrid {
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)) !important;
+    grid-template-columns: repeat(auto-fit, 180px) !important;
     gap: 16px;
     flex: 1;
     overflow-y: auto;
     align-content: center;
     justify-content: center;
-    padding-right: 0;
+    padding: 8px 0;
   }
   body.presenter-mode .pad {
     aspect-ratio: 1;
-    max-width: 200px;
-    max-height: 200px;
-    width: 100%;
-    justify-self: center;
+    width: 180px;
+    height: 180px;
   }
   body.presenter-mode .pad-name { font-size: 16px; }
   body.presenter-mode .pad-duration { font-size: 12px; }
