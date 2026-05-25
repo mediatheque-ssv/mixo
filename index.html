@@ -1065,8 +1065,7 @@
   body.presenter-mode #exportsPanel,
   body.presenter-mode .resizer-vertical,
   body.presenter-mode .mic-row select,
-  body.presenter-mode .mic-row .vu-container,
-  body.presenter-mode #monitoringPanel {
+  body.presenter-mode .mic-row .vu-container {
     display: none !important;
   }
   body.presenter-mode .panel {
@@ -1112,8 +1111,17 @@
     margin-left: 0;
     letter-spacing: 6px;
   }
+  /* Monitoring visible mais plus compact */
+  body.presenter-mode #monitoringPanel {
+    padding: 0 24px 12px !important;
+    max-width: 900px;
+    margin: 0 auto;
+    width: 100%;
+  }
+  body.presenter-mode #monitoringPanel .panel-header { display: none; }
+  /* Pads : carrés, plus gros, centrés, prennent tout le bas */
   body.presenter-mode #padsPanel {
-    padding: 12px 32px !important;
+    padding: 12px 32px 24px !important;
     flex: 1; min-height: 0;
     display: flex; flex-direction: column;
   }
@@ -1121,26 +1129,29 @@
     display: flex !important;
     justify-content: center; align-items: center;
     padding: 4px 0 12px;
+    flex-shrink: 0;
   }
   body.presenter-mode #padsPanel .panel-title { display: none !important; }
   body.presenter-mode #padsPanel .bank-row { justify-content: center; }
   body.presenter-mode #padsPanel .bank-row select { font-size: 16px; min-width: 240px; }
   body.presenter-mode #padsGrid {
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)) !important;
-    grid-auto-rows: 1fr;
-    gap: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)) !important;
+    gap: 16px;
     flex: 1;
-    align-content: stretch;
+    overflow-y: auto;
+    align-content: center;
+    justify-content: center;
     padding-right: 0;
-    overflow: hidden;
   }
   body.presenter-mode .pad {
-    aspect-ratio: auto !important;
-    min-height: 0;
-    height: 100%;
+    aspect-ratio: 1;
+    max-width: 200px;
+    max-height: 200px;
+    width: 100%;
+    justify-self: center;
   }
-  body.presenter-mode .pad-name { font-size: 18px; }
-  body.presenter-mode .pad-duration { font-size: 13px; }
+  body.presenter-mode .pad-name { font-size: 16px; }
+  body.presenter-mode .pad-duration { font-size: 12px; }
   body.presenter-mode .pad-shortcut {
     font-size: 14px;
     padding: 3px 8px;
