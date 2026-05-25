@@ -1127,26 +1127,29 @@
   }
   body.presenter-mode #padsPanel .panel-header {
     display: flex !important;
-    justify-content: flex-start; align-items: center;
+    justify-content: center; align-items: center;
     padding: 4px 0 12px;
     flex-shrink: 0;
   }
   body.presenter-mode #padsPanel .panel-title { display: none !important; }
-  body.presenter-mode #padsPanel .bank-row { justify-content: flex-start; }
+  body.presenter-mode #padsPanel .bank-row { justify-content: center; }
   body.presenter-mode #padsPanel .bank-row select { font-size: 16px; min-width: 240px; }
+  /* Grille simple : flex wrap, pads à taille fixe carrés */
   body.presenter-mode #padsGrid {
-    grid-template-columns: repeat(auto-fill, minmax(180px, 200px)) !important;
-    gap: 18px;
+    display: flex !important;
+    flex-wrap: wrap;
+    gap: 16px;
     flex: 1;
     overflow-y: auto;
-    align-content: flex-start;
-    justify-content: flex-start;
+    align-content: center;
+    justify-content: center;
     padding: 8px 0;
   }
   body.presenter-mode .pad {
     aspect-ratio: 1;
-    width: 100%;
-    height: auto;
+    width: 180px;
+    height: 180px;
+    flex: 0 0 180px;
   }
   body.presenter-mode .pad-name { font-size: 17px; }
   body.presenter-mode .pad-duration { font-size: 13px; }
