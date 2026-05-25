@@ -766,10 +766,49 @@
   .track-vol-row { display: flex; align-items: center; gap: 6px; font-size: 10px; color: var(--text-soft); font-family: "Courier New", monospace; }
   .track-vol-row input[type=range] { flex: 1; }
   .track-color-dot {
-    width: 10px; height: 10px; border-radius: 50%;
+    width: 14px; height: 14px; border-radius: 50%;
     flex-shrink: 0;
     box-shadow: inset 0 1px 1px rgba(0,0,0,0.4), 0 0 4px currentColor;
     border: 1px solid rgba(0,0,0,0.4);
+    cursor: pointer;
+    transition: transform 0.12s, box-shadow 0.12s;
+  }
+  .track-color-dot:hover {
+    transform: scale(1.2);
+    box-shadow: inset 0 1px 1px rgba(0,0,0,0.4), 0 0 8px currentColor, 0 0 0 1px var(--brass);
+  }
+
+  /* Popover palette pour changer la couleur (= groupe de liaison) d'une piste */
+  .track-color-popover {
+    position: fixed; z-index: 220;
+    background: linear-gradient(180deg, var(--panel-1) 0%, var(--panel-2) 100%);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.7);
+  }
+  .track-color-popover[hidden] { display: none; }
+  .track-color-popover-title {
+    font-size: 10px; font-weight: 700; letter-spacing: 1.5px;
+    color: var(--brass); text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .track-color-popover-grid {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px;
+  }
+  .track-color-popover-swatch {
+    width: 26px; height: 26px; border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: transform 0.1s;
+    box-shadow: inset 0 1px 2px rgba(0,0,0,0.3), 0 0 4px currentColor;
+  }
+  .track-color-popover-swatch:hover { transform: scale(1.1); border-color: rgba(255,255,255,0.3); }
+  .track-color-popover-swatch.selected { border-color: var(--brass); box-shadow: inset 0 1px 2px rgba(0,0,0,0.3), 0 0 8px var(--brass); }
+  .track-color-popover-hint {
+    font-size: 10px; color: var(--text-dim);
+    margin-top: 8px; max-width: 180px; line-height: 1.3;
+    font-style: italic;
   }
   .track-content { position: relative; flex: 1; height: 100%; overflow: hidden; }
   .track-delete-btn {
@@ -1644,27 +1683,52 @@ const state = {
   history: { stack: [], index: -1, max: 80 },
 };
 
-// ===================== Pistes (tracks) =====================
-const TRACK_COLORS_VOICE = ['#3b82f6', '#0891b2', '#10b981', '#6366f1'];
-const TRACK_COLORS_EVENTS = ['#7c3aed', '#ea580c', '#db2777', '#ca8a04', '#9333ea'];
-const TRACK_HEAD_W = 150; // largeur de la bande latérale
+// Palette de couleurs unifiée pour les groupes de pistes.
+// Deux pistes (voix ou bruitages) qui partagent la même couleur sont considérées comme liées.
+const TRACK_COLORS = [
+  '#3b82f6', // bleu
+  '#10b981', // émeraude
+  '#7c3aed', // violet
+  '#ea580c', // orange
+  '#db2777', // rose
+  '#0891b2', // cyan
+  '#ca8a04', // ocre
+  '#6366f1', // indigo
+  '#9333ea', // pourpre
+  '#16a34a', // vert
+];
+// Conservés pour compat anciens projets, mais ne servent plus pour les nouvelles pistes
+const TRACK_COLORS_VOICE = TRACK_COLORS;
+const TRACK_COLORS_EVENTS = TRACK_COLORS;
+const TRACK_HEAD_W = 150;
 
-function makeVoiceTrack(name) {
+// Retourne la prochaine couleur disponible (non utilisée par une piste existante).
+// Si toutes sont prises, cycle dans la liste.
+function nextAvailableTrackColor() {
+  const used = new Set((state.take?.tracks || []).map(t => t.color));
+  for (const c of TRACK_COLORS) {
+    if (!used.has(c)) return c;
+  }
+  // Tout pris : cycle
+  return TRACK_COLORS[(state.take?.tracks?.length || 0) % TRACK_COLORS.length];
+}
+
+function makeVoiceTrack(name, color) {
   const n = state.take ? state.take.tracks.filter(t => t.type === 'voice').length : 0;
   return {
     id: uid('tk'), type: 'voice',
     name: name || `${n + 1}`,
-    color: TRACK_COLORS_VOICE[n % TRACK_COLORS_VOICE.length],
+    color: color || nextAvailableTrackColor(),
     volume: 1, muted: false, solo: false,
     clips: [],
   };
 }
-function makeEventTrack(name) {
+function makeEventTrack(name, color) {
   const n = state.take ? state.take.tracks.filter(t => t.type === 'events').length : 0;
   return {
     id: uid('tk'), type: 'events',
     name: name || `${n + 1}`,
-    color: TRACK_COLORS_EVENTS[n % TRACK_COLORS_EVENTS.length],
+    color: color || nextAvailableTrackColor(),
     volume: 1, muted: false, solo: false,
     events: [],
   };
@@ -2028,24 +2092,23 @@ async function startRecording() {
   const inOverdub = state.take && state.take.tracks && state.take.tracks.length > 0;
   if (inOverdub) {
     state.overdubStartTime = state.playback.startAtTime || 0;
-    // Créer une nouvelle piste voix ET une nouvelle piste bruitages associée pour cette prise
-    const newVoiceTrack = makeVoiceTrack();
-    const newEventTrack = makeEventTrack();
-    newVoiceTrack.linkedEventsTrackId = newEventTrack.id;
+    // Créer une voix + des bruitages, liées par couleur commune
+    const groupColor = nextAvailableTrackColor();
+    const newVoiceTrack = makeVoiceTrack(null, groupColor);
+    const newEventTrack = makeEventTrack(null, groupColor);
     state.take.tracks.push(newVoiceTrack);
     state.take.tracks.push(newEventTrack);
-    state.activeTrackId = newEventTrack.id; // pads déclenchés vont dans la nouvelle piste bruitages
+    state.activeTrackId = newEventTrack.id;
     state.overdubVoiceTrackId = newVoiceTrack.id;
     state.overdubEventsTrackId = newEventTrack.id;
   } else {
-    // Premier enregistrement : on initialise un nouveau take avec une voix + bruitages liées
     state.take = { voiceBuffers: {}, tracks: [], duration: 0 };
-    const firstVoice = makeVoiceTrack();
-    const firstEvents = makeEventTrack();
-    firstVoice.linkedEventsTrackId = firstEvents.id;
+    const groupColor = TRACK_COLORS[0];
+    const firstVoice = makeVoiceTrack(null, groupColor);
+    const firstEvents = makeEventTrack(null, groupColor);
     state.take.tracks.push(firstVoice);
     state.take.tracks.push(firstEvents);
-    state.activeTrackId = firstEvents.id; // bruitages actif (les pads y vont)
+    state.activeTrackId = firstEvents.id;
     state.overdubStartTime = 0;
     state.overdubVoiceTrackId = firstVoice.id;
     state.overdubEventsTrackId = firstEvents.id;
@@ -3025,7 +3088,7 @@ function renderTracks(w) {
     const audibleHint = !trackIsAudible(track) ? '<span style="color:#ef4444">⨯</span>' : '';
     head.innerHTML = `
       <div class="track-head-row">
-        <span class="track-color-dot" style="background:${track.color}"></span>
+        <span class="track-color-dot" data-color-dot="${track.id}" style="background:${track.color}; color:${track.color}" title="Cliquer pour changer la couleur (pistes de même couleur = liées)"></span>
         <span class="track-head-label track-head-label-${track.type}" data-track-type="${typeLabel}">
           <span class="track-head-name" data-track-name="${track.id}" title="Double-clic pour renommer">${escapeHtml(track.name)}</span>
         </span>
@@ -3078,6 +3141,11 @@ function renderTracks(w) {
     });
 
     // Boutons header
+    const colorDot = head.querySelector(`[data-color-dot="${track.id}"]`);
+    if (colorDot) colorDot.addEventListener('click', e => {
+      e.stopPropagation();
+      openTrackColorPopover(colorDot, track);
+    });
     head.querySelector(`[data-mute="${track.id}"]`).addEventListener('click', e => {
       e.stopPropagation();
       track.muted = !track.muted;
@@ -3176,22 +3244,17 @@ function deleteTrack(trackId) {
   const track = findTrack(trackId);
   if (!track) return;
   const count = track.type === 'voice' ? track.clips.length : track.events.length;
-  // Détecter une piste bruitages liée à supprimer aussi
-  const linkedEventsTrack = (track.type === 'voice' && track.linkedEventsTrackId)
-    ? state.take.tracks.find(t => t.id === track.linkedEventsTrackId)
-    : null;
+  // Détecter les autres pistes liées par couleur (sauf elle-même)
+  const linkedTracks = state.take.tracks.filter(t => t.id !== trackId && t.color === track.color);
   let msg = `Supprimer la piste "${track.name}"`;
   if (count > 0) msg += ` et ses ${count} ${track.type === 'voice' ? 'clip(s)' : 'bruitage(s)'}`;
   msg += ' ?';
-  if (linkedEventsTrack) {
-    const linkedCount = linkedEventsTrack.events.length;
-    msg += `\n\nSa piste bruitages associée "${linkedEventsTrack.name}"` +
-           (linkedCount > 0 ? ` (${linkedCount} bruitage(s))` : '') +
-           ` sera aussi supprimée.`;
+  if (linkedTracks.length > 0) {
+    const names = linkedTracks.map(t => `"${t.name}"`).join(', ');
+    msg += `\n\nLes pistes liées (même couleur) ${names} seront aussi supprimées.`;
   }
   if (!confirm(msg)) return;
-  const idsToRemove = new Set([trackId]);
-  if (linkedEventsTrack) idsToRemove.add(linkedEventsTrack.id);
+  const idsToRemove = new Set([trackId, ...linkedTracks.map(t => t.id)]);
   state.take.tracks = state.take.tracks.filter(t => !idsToRemove.has(t.id));
   if (state.activeTrackId && idsToRemove.has(state.activeTrackId)) {
     state.activeTrackId = state.take.tracks[0]?.id || null;
@@ -3208,6 +3271,64 @@ function addNewTrack(type) {
   state.activeTrackId = track.id;
   pushHistory();
   renderTimeline();
+}
+
+// Ouvre un popover de palette pour changer la couleur (= groupe de liaison) d'une piste
+function openTrackColorPopover(anchorEl, track) {
+  // Fermer un popover existant
+  closeTrackColorPopover();
+  const popover = document.createElement('div');
+  popover.className = 'track-color-popover';
+  popover.id = 'trackColorPopover';
+  popover.innerHTML = `
+    <div class="track-color-popover-title">Couleur de la piste</div>
+    <div class="track-color-popover-grid">
+      ${TRACK_COLORS.map(c => `
+        <div class="track-color-popover-swatch${c === track.color ? ' selected' : ''}"
+             data-color="${c}"
+             style="background:${c}; color:${c}"
+             title="${c}"></div>
+      `).join('')}
+    </div>
+    <div class="track-color-popover-hint">Les pistes de même couleur sont liées (Ctrl+drag, suppression).</div>
+  `;
+  document.body.appendChild(popover);
+  // Positionner sous le dot
+  const rect = anchorEl.getBoundingClientRect();
+  const popRect = popover.getBoundingClientRect();
+  let left = rect.left;
+  let top = rect.bottom + 4;
+  if (left + popRect.width > window.innerWidth - 8) left = window.innerWidth - popRect.width - 8;
+  if (top + popRect.height > window.innerHeight - 8) top = rect.top - popRect.height - 4;
+  popover.style.left = left + 'px';
+  popover.style.top = top + 'px';
+  // Sélection d'une couleur
+  popover.querySelectorAll('.track-color-popover-swatch').forEach(sw => {
+    sw.addEventListener('click', e => {
+      e.stopPropagation();
+      const newColor = sw.dataset.color;
+      if (newColor !== track.color) {
+        track.color = newColor;
+        pushHistory();
+        renderTimeline();
+      }
+      closeTrackColorPopover();
+    });
+  });
+  // Fermer au clic ailleurs
+  setTimeout(() => {
+    document.addEventListener('click', onDocClick);
+  }, 0);
+  function onDocClick(e) {
+    if (!popover.contains(e.target)) {
+      closeTrackColorPopover();
+      document.removeEventListener('click', onDocClick);
+    }
+  }
+}
+function closeTrackColorPopover() {
+  const existing = document.getElementById('trackColorPopover');
+  if (existing) existing.remove();
 }
 
 // === Rendu des clips voix dans une piste ===
@@ -3387,20 +3508,16 @@ function setupVoiceClipInteraction(el, clip, track) {
       originTrackId: track.id,
     };
     if (drag.ctrl) {
-      // Embarquer les events qui tombent dans l'intervalle du clip.
-      // Si la piste voix a une piste bruitages liée, on se limite à celle-ci.
-      // Sinon (pistes anciennes sans lien), on embarque depuis toutes les pistes bruitages (rétro-compat).
+      // Embarquer les events qui tombent dans l'intervalle du clip, sur les pistes bruitages
+      // de la même couleur que la piste voix (= pistes liées).
       const t0 = clip.time;
       const t1 = clip.time + (clip.sourceEnd - clip.sourceStart);
       drag.attached = [];
-      const linkedId = track.linkedEventsTrackId;
-      const eventTracks = linkedId
-        ? state.take.tracks.filter(t => t.id === linkedId)
-        : state.take.tracks.filter(t => t.type === 'events');
+      const groupColor = track.color;
+      const eventTracks = state.take.tracks.filter(t => t.type === 'events' && t.color === groupColor);
       for (const t of eventTracks) {
         for (const ev of t.events) {
           if (ev.time >= t0 && ev.time < t1) {
-            // On stocke aussi l'élément DOM pour pouvoir le déplacer visuellement pendant le drag
             const evEl = document.querySelector(`.event-block[data-id="${ev.id}"]`);
             drag.attached.push({ ev, relTime: ev.time - t0, el: evEl });
           }
