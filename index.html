@@ -3334,9 +3334,13 @@ function setupVoiceClipInteraction(el, clip, track) {
     if (e.button !== undefined && e.button !== 0) return;
     const isCtrl = e.ctrlKey || e.metaKey;
     const fromName = e.target.closest('.voice-clip-name');
-    // Si Ctrl+clic OU clic sur le nom : on ne démarre le drag qu'au mouvement.
-    // Sans mouvement : Ctrl+clic ouvre l'inspecteur, clic simple sur le nom passe en édition (dblclick).
-    if (isCtrl || fromName) {
+    // Clic sur le nom : on ne fait rien ici (laisser le navigateur gérer dblclick → édition).
+    // Le drag du clip ne se déclenche que depuis le reste de la barre laiton.
+    if (fromName && !isCtrl) {
+      return;
+    }
+    // Ctrl+clic (sans bouger) : ouvrir l'inspecteur. Ctrl+drag : drag avec attached.
+    if (isCtrl) {
       const startX0 = e.clientX, startY0 = e.clientY;
       let armed = true;
       const onArmedMove = (ev) => {
@@ -3347,23 +3351,19 @@ function setupVoiceClipInteraction(el, clip, track) {
         document.removeEventListener('mouseup', onArmedUp);
         startDrag(ev);
       };
-      const onArmedUp = (ev) => {
+      const onArmedUp = () => {
         if (!armed) return;
         armed = false;
         document.removeEventListener('mousemove', onArmedMove);
         document.removeEventListener('mouseup', onArmedUp);
-        // Pas de mouvement détecté : c'était un simple clic
-        if (isCtrl) {
-          // Ctrl+clic sans drag : sélectionner et ouvrir l'inspecteur
-          state.selectedKind = 'voice';
-          state.selectedId = clip.id;
-          state.activeTrackId = track.id;
-          state.voiceSelection = null;
-          state.inspectorRequestedFor = 'voice:' + clip.id;
-          state.inspectorDismissedFor = null;
-          renderTimeline();
-        }
-        // Si fromName sans Ctrl : laissons le navigateur gérer (dblclick possible)
+        // Ctrl+clic sans drag : sélectionner et ouvrir l'inspecteur
+        state.selectedKind = 'voice';
+        state.selectedId = clip.id;
+        state.activeTrackId = track.id;
+        state.voiceSelection = null;
+        state.inspectorRequestedFor = 'voice:' + clip.id;
+        state.inspectorDismissedFor = null;
+        renderTimeline();
       };
       document.addEventListener('mousemove', onArmedMove);
       document.addEventListener('mouseup', onArmedUp);
