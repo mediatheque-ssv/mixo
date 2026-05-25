@@ -1134,15 +1134,16 @@
   body.presenter-mode #padsPanel .panel-title { display: none !important; }
   body.presenter-mode #padsPanel .bank-row { justify-content: center; }
   body.presenter-mode #padsPanel .bank-row select { font-size: 16px; min-width: 240px; }
-  /* Grille simple : flex wrap, pads à taille fixe carrés */
+  /* Grille simple : flex wrap, pads à taille fixe carrés, alignés en haut à gauche */
   body.presenter-mode #padsGrid {
     display: flex !important;
     flex-wrap: wrap;
     gap: 16px;
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
-    align-content: center;
-    justify-content: center;
+    align-content: flex-start;
+    justify-content: flex-start;
     padding: 8px 0;
   }
   body.presenter-mode .pad {
