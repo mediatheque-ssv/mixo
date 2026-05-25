@@ -3400,7 +3400,9 @@ function setupVoiceClipInteraction(el, clip, track) {
       for (const t of eventTracks) {
         for (const ev of t.events) {
           if (ev.time >= t0 && ev.time < t1) {
-            drag.attached.push({ ev, relTime: ev.time - t0 });
+            // On stocke aussi l'élément DOM pour pouvoir le déplacer visuellement pendant le drag
+            const evEl = document.querySelector(`.event-block[data-id="${ev.id}"]`);
+            drag.attached.push({ ev, relTime: ev.time - t0, el: evEl });
           }
         }
       }
@@ -3422,7 +3424,11 @@ function setupVoiceClipInteraction(el, clip, track) {
     clip.time = newTime;
     el.style.left = (newTime * state.zoomPxPerSec) + 'px';
     if (drag.attached) {
-      for (const a of drag.attached) a.ev.time = newTime + a.relTime;
+      for (const a of drag.attached) {
+        a.ev.time = newTime + a.relTime;
+        // Feedback visuel : repositionner aussi le DOM de l'event embarqué
+        if (a.el) a.el.style.left = (a.ev.time * state.zoomPxPerSec) + 'px';
+      }
     }
     recomputeDuration();
 
