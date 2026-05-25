@@ -1676,6 +1676,12 @@ function findTrack(id) {
 function getActiveTrack(type) {
   // Retourne la piste active si elle correspond au type, sinon la première du type
   if (!state.take) return null;
+  // Pendant un enregistrement (overdub ou premier rec), les pads déclenchés vont dans la piste
+  // bruitages liée à la piste voix en cours d'enregistrement.
+  if (type === 'events' && state.isRecording && state.overdubEventsTrackId) {
+    const linked = state.take.tracks.find(t => t.id === state.overdubEventsTrackId);
+    if (linked) return linked;
+  }
   if (type) {
     const active = state.take.tracks.find(t => t.id === state.activeTrackId);
     if (active && active.type === type) return active;
@@ -2022,24 +2028,27 @@ async function startRecording() {
   const inOverdub = state.take && state.take.tracks && state.take.tracks.length > 0;
   if (inOverdub) {
     state.overdubStartTime = state.playback.startAtTime || 0;
-    // Créer une nouvelle piste voix pour cette prise
+    // Créer une nouvelle piste voix ET une nouvelle piste bruitages associée pour cette prise
     const newVoiceTrack = makeVoiceTrack();
+    const newEventTrack = makeEventTrack();
+    newVoiceTrack.linkedEventsTrackId = newEventTrack.id;
     state.take.tracks.push(newVoiceTrack);
-    state.activeTrackId = newVoiceTrack.id;
+    state.take.tracks.push(newEventTrack);
+    state.activeTrackId = newEventTrack.id; // pads déclenchés vont dans la nouvelle piste bruitages
     state.overdubVoiceTrackId = newVoiceTrack.id;
-    // S'assurer qu'on a aussi une piste events active pour les pads déclenchés en direct
-    if (!state.take.tracks.some(t => t.type === 'events')) {
-      const newEventTrack = makeEventTrack();
-      state.take.tracks.push(newEventTrack);
-    }
+    state.overdubEventsTrackId = newEventTrack.id;
   } else {
-    // Premier enregistrement : on initialise un nouveau take
+    // Premier enregistrement : on initialise un nouveau take avec une voix + bruitages liées
     state.take = { voiceBuffers: {}, tracks: [], duration: 0 };
-    state.take.tracks.push(makeVoiceTrack());
-    state.take.tracks.push(makeEventTrack());
-    state.activeTrackId = state.take.tracks[1].id; // bruitages actif (les pads y vont)
+    const firstVoice = makeVoiceTrack();
+    const firstEvents = makeEventTrack();
+    firstVoice.linkedEventsTrackId = firstEvents.id;
+    state.take.tracks.push(firstVoice);
+    state.take.tracks.push(firstEvents);
+    state.activeTrackId = firstEvents.id; // bruitages actif (les pads y vont)
     state.overdubStartTime = 0;
-    state.overdubVoiceTrackId = state.take.tracks[0].id;
+    state.overdubVoiceTrackId = firstVoice.id;
+    state.overdubEventsTrackId = firstEvents.id;
   }
 
   const mime = pickMimeType();
@@ -2228,6 +2237,7 @@ async function onRecordingStop() {
     }
     state.isOverdub = false;
     state.overdubVoiceTrackId = null;
+    state.overdubEventsTrackId = null;
     state.overdubStartTime = 0;
   }, 200);
 }
@@ -3166,12 +3176,26 @@ function deleteTrack(trackId) {
   const track = findTrack(trackId);
   if (!track) return;
   const count = track.type === 'voice' ? track.clips.length : track.events.length;
+  // Détecter une piste bruitages liée à supprimer aussi
+  const linkedEventsTrack = (track.type === 'voice' && track.linkedEventsTrackId)
+    ? state.take.tracks.find(t => t.id === track.linkedEventsTrackId)
+    : null;
   let msg = `Supprimer la piste "${track.name}"`;
   if (count > 0) msg += ` et ses ${count} ${track.type === 'voice' ? 'clip(s)' : 'bruitage(s)'}`;
   msg += ' ?';
+  if (linkedEventsTrack) {
+    const linkedCount = linkedEventsTrack.events.length;
+    msg += `\n\nSa piste bruitages associée "${linkedEventsTrack.name}"` +
+           (linkedCount > 0 ? ` (${linkedCount} bruitage(s))` : '') +
+           ` sera aussi supprimée.`;
+  }
   if (!confirm(msg)) return;
-  state.take.tracks = state.take.tracks.filter(t => t.id !== trackId);
-  if (state.activeTrackId === trackId) state.activeTrackId = state.take.tracks[0]?.id || null;
+  const idsToRemove = new Set([trackId]);
+  if (linkedEventsTrack) idsToRemove.add(linkedEventsTrack.id);
+  state.take.tracks = state.take.tracks.filter(t => !idsToRemove.has(t.id));
+  if (state.activeTrackId && idsToRemove.has(state.activeTrackId)) {
+    state.activeTrackId = state.take.tracks[0]?.id || null;
+  }
   recomputeDuration();
   pushHistory();
   renderTimeline();
@@ -3363,12 +3387,17 @@ function setupVoiceClipInteraction(el, clip, track) {
       originTrackId: track.id,
     };
     if (drag.ctrl) {
-      // Embarquer tous les events qui tombent dans l'intervalle du clip, toutes pistes confondues
+      // Embarquer les events qui tombent dans l'intervalle du clip.
+      // Si la piste voix a une piste bruitages liée, on se limite à celle-ci.
+      // Sinon (pistes anciennes sans lien), on embarque depuis toutes les pistes bruitages (rétro-compat).
       const t0 = clip.time;
       const t1 = clip.time + (clip.sourceEnd - clip.sourceStart);
       drag.attached = [];
-      for (const t of state.take.tracks) {
-        if (t.type !== 'events') continue;
+      const linkedId = track.linkedEventsTrackId;
+      const eventTracks = linkedId
+        ? state.take.tracks.filter(t => t.id === linkedId)
+        : state.take.tracks.filter(t => t.type === 'events');
+      for (const t of eventTracks) {
         for (const ev of t.events) {
           if (ev.time >= t0 && ev.time < t1) {
             drag.attached.push({ ev, relTime: ev.time - t0 });
