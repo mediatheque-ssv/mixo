@@ -1127,29 +1127,29 @@
   }
   body.presenter-mode #padsPanel .panel-header {
     display: flex !important;
-    justify-content: center; align-items: center;
+    justify-content: flex-start; align-items: center;
     padding: 4px 0 12px;
     flex-shrink: 0;
   }
   body.presenter-mode #padsPanel .panel-title { display: none !important; }
-  body.presenter-mode #padsPanel .bank-row { justify-content: center; }
+  body.presenter-mode #padsPanel .bank-row { justify-content: flex-start; }
   body.presenter-mode #padsPanel .bank-row select { font-size: 16px; min-width: 240px; }
   body.presenter-mode #padsGrid {
-    grid-template-columns: repeat(auto-fit, 180px) !important;
-    gap: 16px;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 200px)) !important;
+    gap: 18px;
     flex: 1;
     overflow-y: auto;
-    align-content: center;
-    justify-content: center;
+    align-content: flex-start;
+    justify-content: flex-start;
     padding: 8px 0;
   }
   body.presenter-mode .pad {
     aspect-ratio: 1;
-    width: 180px;
-    height: 180px;
+    width: 100%;
+    height: auto;
   }
-  body.presenter-mode .pad-name { font-size: 16px; }
-  body.presenter-mode .pad-duration { font-size: 12px; }
+  body.presenter-mode .pad-name { font-size: 17px; }
+  body.presenter-mode .pad-duration { font-size: 13px; }
   body.presenter-mode .pad-shortcut {
     font-size: 14px;
     padding: 3px 8px;
