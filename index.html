@@ -1140,6 +1140,7 @@
     display: flex !important;
     flex-direction: column;
     overflow: hidden;
+    box-sizing: border-box;
   }
   body.presenter-mode #padsPanel .panel-header {
     display: flex !important;
@@ -5278,9 +5279,20 @@ function adjustPresenterPadsPosition() {
   const mic = document.getElementById('micPanel');
   const monitoring = document.getElementById('monitoringPanel');
   const padsPanel = document.getElementById('padsPanel');
-  if (!mic || !monitoring || !padsPanel) return;
+  const padsGrid = document.getElementById('padsGrid');
+  if (!mic || !monitoring || !padsPanel || !padsGrid) return;
   const topUsed = mic.offsetHeight + monitoring.offsetHeight;
   padsPanel.style.top = topUsed + 'px';
+  // Forcer la hauteur du grid : panel - header - paddings
+  // On laisse le navigateur calculer la hauteur réelle disponible
+  requestAnimationFrame(() => {
+    const panelInner = padsPanel.clientHeight; // exclut le scrollbar
+    const header = padsPanel.querySelector('.panel-header');
+    const headerH = header ? header.offsetHeight : 0;
+    // Padding bottom du panel (24px) déjà inclus dans clientHeight
+    const availableH = panelInner - headerH - 24; // 24 = padding bottom approximatif
+    padsGrid.style.height = Math.max(180, availableH) + 'px';
+  });
 }
 function enterPresenterMode() {
   document.body.classList.add('presenter-mode');
@@ -5297,6 +5309,7 @@ function enterPresenterMode() {
 function exitPresenterMode() {
   document.body.classList.remove('presenter-mode');
   document.getElementById('padsPanel').style.top = '';
+  document.getElementById('padsGrid').style.height = '';
   if (document.fullscreenElement && document.exitFullscreen) {
     document.exitFullscreen().catch(() => {});
   }
