@@ -3163,9 +3163,11 @@ function hideEditor() {
   renderPads();
 }
 
+const TIMELINE_EXTRA_SECONDS = 30; // espace vide en bout de timeline pour placer le playhead facilement
+
 function getTimelineWidth() {
   if (!state.take) return 800;
-  return Math.max(400, TRACK_HEAD_W + state.take.duration * state.zoomPxPerSec + 40);
+  return Math.max(400, TRACK_HEAD_W + (state.take.duration + TIMELINE_EXTRA_SECONDS) * state.zoomPxPerSec);
 }
 
 function renderTimeline() {
@@ -3195,7 +3197,8 @@ function updateMixDurationDisplay() {
 function renderRuler(w) {
   const ruler = document.getElementById('timelineRuler');
   ruler.innerHTML = '';
-  const dur = state.take.duration;
+  // On dessine les ticks jusqu'à la fin visible de la timeline (= durée + extra), pas seulement jusqu'à take.duration
+  const dur = state.take.duration + TIMELINE_EXTRA_SECONDS;
   const candidates = [0.5, 1, 2, 5, 10, 30, 60];
   let step = 1;
   for (const c of candidates) { if (c * state.zoomPxPerSec >= 50) { step = c; break; } }
@@ -4461,7 +4464,10 @@ function timelineBackgroundClick(e) {
   const x = e.clientX - rect.left - TRACK_HEAD_W;
   if (x < 0) return; // clic dans la zone des headers
   const t = x / state.zoomPxPerSec;
-  if (t >= 0 && state.take && t <= state.take.duration) {
+  // Autoriser jusqu'à la fin visible de la timeline (= duration + extra) pour pouvoir placer
+  // le playhead derrière la dernière piste et coller un truc après.
+  const maxT = (state.take ? state.take.duration : 0) + TIMELINE_EXTRA_SECONDS;
+  if (t >= 0 && state.take && t <= maxT) {
     setPlayheadTime(t);
   }
 }
@@ -4548,6 +4554,40 @@ async function applySelectionAction(action) {
 }
 
 // Colle le presse-papier de zone voix au playhead, dans la piste voix active (ou la première trouvée).
+// Copie un clip voix entier dans le presse-papier interne (sans modifier la timeline)
+function copyVoiceClipToClipboard(clipId) {
+  const found = findClipById(clipId);
+  if (!found) return;
+  const clip = found.clip;
+  const srcBuf = getClipBuffer(clip);
+  if (!srcBuf) { showStatus("Buffer audio introuvable.", 'error'); return; }
+  const extracted = extractAudioBuffer(srcBuf, clip.sourceStart, clip.sourceEnd);
+  state.voiceClipboard = {
+    buffer: extracted,
+    name: clip.name || 'Clip',
+    duration: clip.sourceEnd - clip.sourceStart,
+  };
+  showStatus(`Clip "${clip.name || 'Clip'}" copié (${(clip.sourceEnd - clip.sourceStart).toFixed(2)}s)`, 'info');
+}
+
+// Coupe un clip voix entier : copie dans le presse-papier + ripple delete sur sa piste
+function cutVoiceClipToClipboard(clipId) {
+  const found = findClipById(clipId);
+  if (!found) return;
+  const clip = found.clip;
+  const track = found.track;
+  copyVoiceClipToClipboard(clipId);
+  // Retirer le clip : on simule un removeRangeFromClip sur toute la durée
+  const clipDur = clip.sourceEnd - clip.sourceStart;
+  removeRangeFromClip(clip, track, 0, clipDur);
+  state.selectedKind = null;
+  state.selectedId = null;
+  recomputeDuration();
+  pushHistory();
+  renderTimeline();
+  showStatus(`Clip "${clip.name || 'Clip'}" coupé`, 'info');
+}
+
 async function pasteVoiceClipboardAtPlayhead() {
   if (!state.voiceClipboard || !state.voiceClipboard.buffer) {
     showStatus("Rien à coller.", 'info');
@@ -6788,15 +6828,19 @@ document.addEventListener('keydown', e => {
     if (state.voiceSelection) applySelectionAction('copyToPad');
     return;
   }
-  // Ctrl+X / Ctrl+C / Ctrl+V : presse-papier interne (sélection voix)
+  // Ctrl+X / Ctrl+C / Ctrl+V : presse-papier interne
+  // - Si une zone est sélectionnée : couper/copier la zone (comme avant)
+  // - Sinon, si un clip voix entier est sélectionné : couper/copier le clip entier
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'x' || e.key === 'X')) {
     e.preventDefault();
     if (state.voiceSelection) applySelectionAction('cut');
+    else if (state.selectedKind === 'voice' && state.selectedId) cutVoiceClipToClipboard(state.selectedId);
     return;
   }
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'c' || e.key === 'C')) {
     e.preventDefault();
     if (state.voiceSelection) applySelectionAction('copy');
+    else if (state.selectedKind === 'voice' && state.selectedId) copyVoiceClipToClipboard(state.selectedId);
     return;
   }
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'v' || e.key === 'V')) {
