@@ -1388,13 +1388,9 @@
     <div style="font-size: 12px; color: var(--text-soft); font-style: italic;">Volumes d'écoute pendant l'enregistrement — n'affecte pas le mix final</div>
   </div>
   <div class="mixer">
-    <div class="channel">
-      <div class="channel-label"><span>Pads</span><span class="channel-value" id="padVolVal">80%</span></div>
-      <input type="range" id="padVol" min="0" max="150" value="80">
-    </div>
-    <div class="channel">
-      <div class="channel-label"><span>Pistes</span><span class="channel-value" id="tracksMonitorVolVal">80%</span></div>
-      <input type="range" id="tracksMonitorVol" min="0" max="150" value="80">
+    <div class="channel" style="flex: 1">
+      <div class="channel-label"><span>Volume d'écoute</span><span class="channel-value" id="monitorVolVal">80%</span></div>
+      <input type="range" id="monitorVol" min="0" max="150" value="80">
     </div>
   </div>
 </div>
@@ -1594,29 +1590,54 @@
 </div>
 
 <div id="helpModal" class="modal-bg">
-  <div class="modal" style="max-width: 560px">
+  <div class="modal" style="max-width: 640px">
     <h3>Raccourcis et workflow</h3>
-    <div style="font-size: 13px; line-height: 1.8;">
-      <div><kbd>Espace</kbd> &nbsp; Enregistrer / Pause (ou Lecture/Pause dans l'éditeur)</div>
+
+    <h4 style="margin-top: 14px; color: var(--brass); font-size: 13px; letter-spacing: 1px; text-transform: uppercase;">Transport et lecture</h4>
+    <div style="font-size: 13px; line-height: 1.8; color: var(--text);">
+      <div><kbd>Espace</kbd> &nbsp; Enregistrer / Pause (ou Lecture / Pause dans l'éditeur)</div>
       <div><kbd>Échap</kbd> &nbsp; Stop, ou annuler la sélection</div>
-      <div><kbd>1</kbd>–<kbd>9</kbd>, <kbd>0</kbd> &nbsp; Lire les 10 premiers pads (preview)</div>
+      <div><kbd>F11</kbd> &nbsp; Mode présentateur plein écran</div>
+    </div>
+
+    <h4 style="margin-top: 14px; color: var(--brass); font-size: 13px; letter-spacing: 1px; text-transform: uppercase;">Pads</h4>
+    <div style="font-size: 13px; line-height: 1.8; color: var(--text);">
+      <div><kbd>1</kbd>–<kbd>9</kbd>, <kbd>0</kbd> &nbsp; Déclencher les 10 premiers pads</div>
       <div><kbd>Ctrl+clic</kbd> sur un pad &nbsp; Ajouter au playhead dans la piste bruitages active</div>
-      <div><kbd>Ctrl+1</kbd>…<kbd>Ctrl+9</kbd> &nbsp; Lire + ajouter à la timeline</div>
+      <div><kbd>Ctrl+1</kbd>…<kbd>Ctrl+9</kbd> &nbsp; Déclencher + ajouter à la timeline</div>
+      <div>Étoile sur un pad &nbsp; Ajouter aux favoris (banque virtuelle "★ Favoris")</div>
+    </div>
+
+    <h4 style="margin-top: 14px; color: var(--brass); font-size: 13px; letter-spacing: 1px; text-transform: uppercase;">Édition</h4>
+    <div style="font-size: 13px; line-height: 1.8; color: var(--text);">
       <div><kbd>S</kbd> &nbsp; Scinder le clip voix au curseur (ou aux bornes d'une sélection)</div>
       <div><kbd>M</kbd> &nbsp; Silencer la sélection</div>
-      <div><kbd>Ctrl+X</kbd> &nbsp; Couper la sélection vers un nouveau pad</div>
-      <div><kbd>Ctrl+C</kbd> &nbsp; Copier la sélection vers un nouveau pad</div>
-      <div><kbd>Suppr</kbd> &nbsp; Supprimer la sélection (ou le bloc/clip sélectionné)</div>
+      <div><kbd>Suppr</kbd> &nbsp; Supprimer la sélection (la suite s'aimante pour combler le trou)</div>
+      <div><kbd>Ctrl+C</kbd> / <kbd>Ctrl+X</kbd> / <kbd>Ctrl+V</kbd> &nbsp; Copier / Couper / Coller (presse-papier interne)</div>
+      <div><kbd>Ctrl+Maj+C</kbd> / <kbd>Ctrl+Maj+X</kbd> &nbsp; Pader / Pader & couper (zone vers un nouveau pad)</div>
       <div><kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd> &nbsp; Annuler / Rétablir</div>
       <div><kbd>Ctrl+S</kbd> &nbsp; Sauvegarder le projet</div>
     </div>
-    <h3 style="margin-top: 20px; font-size: 16px">Workflow</h3>
-    <div style="font-size: 13px; color: #b0b8c5; line-height: 1.7;">
-      1. Enregistre ta voix en déclenchant les pads — ou <strong>importe un audio existant</strong> (bouton ou glisse-dépose le fichier).<br>
-      2. Dans l'éditeur, glisse les pads pour en ajouter, sélectionne des zones de voix, scinde, repositionne.<br>
-      3. <strong>Ctrl+glisser</strong> un clip voix déplace aussi les bruitages compris dans son intervalle.<br>
-      4. Clique sur un bloc/clip pour ajuster volume et fades.<br>
-      5. <strong>Sauvegarde le projet</strong> pour y revenir plus tard, ou exporte directement en MP3.
+
+    <h4 style="margin-top: 14px; color: var(--brass); font-size: 13px; letter-spacing: 1px; text-transform: uppercase;">Gestes timeline</h4>
+    <div style="font-size: 13px; line-height: 1.8; color: var(--text);">
+      <div><strong>Glisser la barre laiton</strong> d'un clip voix &nbsp; Déplacer le clip</div>
+      <div><strong>Ctrl+glisser</strong> un clip voix &nbsp; Déplace aussi les bruitages liés (= pistes de même couleur)</div>
+      <div><strong>Glisser les bords</strong> d'un clip ou bruitage &nbsp; Rogner le début / la fin</div>
+      <div><strong>Cliquer-glisser sur le corps</strong> d'un clip voix &nbsp; Sélectionner une zone</div>
+      <div><strong>Double-clic</strong> sur un clip ou bruitage &nbsp; Ouvrir le panneau de propriétés</div>
+      <div><strong>Bouton ⋯</strong> sur un clip ou bruitage &nbsp; Idem (propriétés)</div>
+      <div><strong>Double-clic</strong> sur le nom (barre laiton) &nbsp; Renommer le clip</div>
+      <div><strong>Clic sur le rond coloré</strong> d'une piste &nbsp; Changer la couleur — pistes de même couleur = liées</div>
+    </div>
+
+    <h3 style="margin-top: 22px; font-size: 16px">Workflow</h3>
+    <div style="font-size: 13px; color: var(--text-soft); line-height: 1.7;">
+      1. <strong>Enregistre</strong> ta voix en déclenchant les pads pendant la prise — ou <strong>importe un audio existant</strong> (bouton ou glisse-dépose).<br>
+      2. À chaque enregistrement, Mixo crée une piste <strong>Voix</strong> + une piste <strong>Bruitages</strong> liées (même couleur). Lance des prises supplémentaires (overdub) pour superposer.<br>
+      3. Dans l'éditeur, glisse les pads dans la timeline pour en ajouter, sélectionne des zones de voix, scinde, repositionne, rogne les bords.<br>
+      4. <strong>Mixage voix ▾ → Mix podcast</strong> applique EQ + compression + normalisation broadcast en un clic.<br>
+      5. <strong>Sauvegarde le projet</strong> (.mixo) pour y revenir plus tard, ou exporte directement en MP3 192 kbps.
     </div>
     <div class="modal-actions">
       <button id="helpModalClose" class="primary">Fermer</button>
@@ -1662,6 +1683,22 @@
       <button id="saveProjectCancel">Annuler</button>
       <button id="saveProjectDownload">↓ Télécharger .mixo</button>
       <button id="saveProjectOk" class="primary">Sauvegarder ici</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal : nom du fichier MP3 à l'export -->
+<div id="exportMp3Modal" class="modal-bg">
+  <div class="modal">
+    <h3>Exporter en MP3</h3>
+    <label>Nom du fichier</label>
+    <input type="text" id="exportMp3Name" placeholder="mixo-2026-01-01">
+    <div style="font-size: 12px; color: var(--text-soft); margin-top: 10px;">
+      Extension <strong>.mp3</strong> ajoutée automatiquement.
+    </div>
+    <div class="modal-actions">
+      <button id="exportMp3Cancel">Annuler</button>
+      <button id="exportMp3Ok" class="primary">Exporter</button>
     </div>
   </div>
 </div>
@@ -3031,13 +3068,14 @@ function triggerPad(id, opts) {
       volume: 1, muted: false, fadeIn: 0, fadeOut: 0,
     });
   }
-  // Cas 2 : éditeur ouvert + opts.addToTimeline → ajoute au playhead dans la piste bruitages active
+  // Cas 2 : éditeur ouvert + opts.addToTimeline → ajoute au playhead, SANS jouer le son
   else if (opts.addToTimeline && state.take && !document.getElementById('editorPanel').classList.contains('hidden')) {
     const t = state.playback.startAtTime || 0;
     addPadToTimeline(pad.id, t);
+    return; // pas de lecture audio en Ctrl+clic
   }
 
-  // Toggle de lecture du son
+  // Toggle de lecture du son (sauf en mode addToTimeline qui a return ci-dessus)
   if (state.activeSources.has(id)) {
     const a = state.activeSources.get(id);
     try { a.source.stop(); } catch(e) {}
@@ -3142,7 +3180,16 @@ function renderTimeline() {
   renderVoiceSelection();
   renderInspector();
   updateSelectionToolbar();
-  document.getElementById('editorTimer').textContent = formatTime(state.take.duration);
+  updateMixDurationDisplay();
+}
+
+// Met à jour l'affichage du timer dans la barre éditeur : "playhead / total"
+function updateMixDurationDisplay() {
+  if (!state.take) return;
+  const t = state.playback.startAtTime || 0;
+  const total = state.take.duration || 0;
+  const el = document.getElementById('editorTimer');
+  if (el) el.textContent = `${formatTime(t)} / ${formatTime(total)}`;
 }
 
 function renderRuler(w) {
@@ -3767,6 +3814,20 @@ function setupVoiceClipInteraction(el, clip, track) {
   function onBodyMove(e) {
     if (!sel) return;
     sel.moved = true;
+    // Auto-scroll horizontal si la souris approche des bords du conteneur timeline
+    const container = document.getElementById('timelineContainer');
+    if (container) {
+      const rect = container.getBoundingClientRect();
+      const edgeZone = 50; // px depuis le bord pour déclencher le scroll
+      const maxSpeed = 20; // px de scroll par event move
+      if (e.clientX < rect.left + edgeZone) {
+        const intensity = (rect.left + edgeZone - e.clientX) / edgeZone;
+        container.scrollLeft -= maxSpeed * intensity;
+      } else if (e.clientX > rect.right - edgeZone) {
+        const intensity = (e.clientX - (rect.right - edgeZone)) / edgeZone;
+        container.scrollLeft += maxSpeed * intensity;
+      }
+    }
     const t = mouseToTimelineX(e.clientX);
     const clipDur = clip.sourceEnd - clip.sourceStart;
     const tStart = Math.max(clip.time, Math.min(clip.time + clipDur, Math.min(sel.startT, t)));
@@ -3775,17 +3836,19 @@ function setupVoiceClipInteraction(el, clip, track) {
     renderVoiceSelection();
     updateSelectionToolbar();
   }
-  function onBodyUp() {
+  function onBodyUp(e) {
     if (!sel) return;
     document.removeEventListener('mousemove', onBodyMove);
     document.removeEventListener('mouseup', onBodyUp);
     if (!sel.moved) {
-      // Clic simple sans mouvement : on ne re-render PAS pour préserver le DOM
-      // (sinon le 2e clic d'un éventuel double-clic ne sera pas détecté car la cible aura changé)
+      // Clic simple sans mouvement : placer le playhead à la position du clic
+      const t = mouseToTimelineX((e && e.clientX != null) ? e.clientX : (sel.startT * state.zoomPxPerSec));
+      setPlayheadTime(Math.max(0, t));
+      // On ne re-render PAS tout (pour préserver le DOM et permettre le dblclick)
       if (state.voiceSelection) {
         state.voiceSelection = null;
-        // pas de renderTimeline ici
       }
+      updateMixDurationDisplay();
     } else if (state.voiceSelection && Math.abs(state.voiceSelection.end - state.voiceSelection.start) < 0.05) {
       state.voiceSelection = null;
       renderTimeline();
@@ -4409,6 +4472,7 @@ function setPlayheadTime(t) {
   ph.classList.add('visible');
   ph.style.left = (TRACK_HEAD_W + t * state.zoomPxPerSec) + 'px';
   state.playback.startAtTime = t;
+  updateMixDurationDisplay();
 }
 
 // ===================== Actions sur sélection voix =====================
@@ -4659,16 +4723,30 @@ function splitAtPlayhead() {
     return;
   }
 
-  // Sinon, scinde au playhead — sur toutes les pistes voix qui ont un clip à ce point
+  // Sinon, scinde au playhead — UNIQUEMENT sur la piste voix active
   const t = state.playback.startAtTime || 0;
   if (t <= 0) { showStatus('Place la tête de lecture ou sélectionne une zone.', 'info'); return; }
-  if (splitAtTimes([t])) {
-    pushHistory();
-    renderTimeline();
-    showStatus('Clip(s) scindé(s)', 'info');
-  } else {
-    showStatus('Aucun clip voix à scinder ici.', 'info');
+  // Trouver la piste active si c'est une piste voix, sinon la première piste voix qui a un clip à ce temps
+  let activeVoiceTrack = state.take.tracks.find(t2 => t2.id === state.activeTrackId && t2.type === 'voice');
+  if (!activeVoiceTrack) {
+    // Fallback : prendre la première piste voix qui a un clip à ce point
+    activeVoiceTrack = state.take.tracks.find(t2 =>
+      t2.type === 'voice' && t2.clips.some(c => t > c.time + 0.01 && t < c.time + (c.sourceEnd - c.sourceStart) - 0.01)
+    );
   }
+  if (!activeVoiceTrack) {
+    showStatus('Aucun clip voix à scinder ici.', 'info');
+    return;
+  }
+  const clipToCut = activeVoiceTrack.clips.find(c => t > c.time + 0.01 && t < c.time + (c.sourceEnd - c.sourceStart) - 0.01);
+  if (!clipToCut) {
+    showStatus('Aucun clip voix à scinder ici sur la piste active.', 'info');
+    return;
+  }
+  doSplit(activeVoiceTrack, clipToCut, t);
+  pushHistory();
+  renderTimeline();
+  showStatus(`Clip scindé sur "${activeVoiceTrack.name}"`, 'info');
 }
 
 // Découpe tous les clips voix qui chevauchent les temps donnés (toutes pistes voix).
@@ -5210,6 +5288,8 @@ function playMix() {
   state.playback.active = true;
   state.playback.startCtxTime = state.audioCtx.currentTime;
   const startAt = state.playback.startAtTime || 0;
+  // Mémoriser le point de départ pour pouvoir y revenir au Stop (comportement Audacity)
+  state.playback.lastPlayedFrom = startAt;
 
   const ctx = state.audioCtx;
   // Bus master avec limiteur de sécurité (protège des saturations causées par superposition + normalisations)
@@ -5333,23 +5413,29 @@ function stopMixPlayback() {
   if (state.playback.rafId) cancelAnimationFrame(state.playback.rafId);
   document.getElementById('btnPlayMix').innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 20,12 6,20"/></svg>Lecture';
   document.getElementById('btnStopMix').disabled = true;
+  // Revenir à la position de départ initiale (comportement Audacity)
+  if (state.playback.lastPlayedFrom != null) {
+    setPlayheadTime(state.playback.lastPlayedFrom);
+  }
+  updateMixDurationDisplay();
 }
 
 function animatePlayhead() {
   const ph = document.getElementById('playhead');
   const container = document.getElementById('timelineContainer');
+  const timerEl = document.getElementById('editorTimer');
+  const total = state.take.duration || 0;
   function loop() {
     if (!state.playback.active) return;
     const elapsed = state.audioCtx.currentTime - state.playback.startCtxTime;
     const t = state.playback.startAtTime + elapsed;
     if (t >= state.take.duration) {
       stopMixPlayback();
-      ph.classList.remove('visible');
-      state.playback.startAtTime = 0;
       return;
     }
     ph.classList.add('visible');
     ph.style.left = (TRACK_HEAD_W + t * state.zoomPxPerSec) + 'px';
+    if (timerEl) timerEl.textContent = `${formatTime(t)} / ${formatTime(total)}`;
     const x = TRACK_HEAD_W + t * state.zoomPxPerSec;
     if (x > container.scrollLeft + container.clientWidth - 80) {
       container.scrollLeft = x - container.clientWidth + 80;
@@ -5382,6 +5468,34 @@ async function confirmDiscardDraft(actionLabel) {
 }
 
 // ===================== Export MP3 =====================
+// Helper : ouvre la modal d'export MP3 et renvoie le nom choisi (ou null si annulé)
+function promptExportFileName(defaultName) {
+  return new Promise(resolve => {
+    const modal = document.getElementById('exportMp3Modal');
+    const input = document.getElementById('exportMp3Name');
+    const okBtn = document.getElementById('exportMp3Ok');
+    const cancelBtn = document.getElementById('exportMp3Cancel');
+    input.value = defaultName;
+    modal.classList.add('visible');
+    setTimeout(() => { input.focus(); input.select(); }, 50);
+    const cleanup = () => {
+      modal.classList.remove('visible');
+      okBtn.removeEventListener('click', onOk);
+      cancelBtn.removeEventListener('click', onCancel);
+      input.removeEventListener('keydown', onKey);
+    };
+    const onOk = () => { const v = (input.value || '').trim(); cleanup(); resolve(v || defaultName); };
+    const onCancel = () => { cleanup(); resolve(null); };
+    const onKey = (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); onOk(); }
+      else if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+    };
+    okBtn.addEventListener('click', onOk);
+    cancelBtn.addEventListener('click', onCancel);
+    input.addEventListener('keydown', onKey);
+  });
+}
+
 async function exportMix() {
   if (!state.take || state.take.tracks.length === 0) { showStatus("Rien à exporter.", 'error'); return; }
   // Vérifier qu'il y a au moins quelque chose à jouer
@@ -5392,6 +5506,12 @@ async function exportMix() {
   }
   if (!hasContent) { showStatus("Rien à exporter.", 'error'); return; }
   if (typeof lamejs === 'undefined') { showStatus("Encodeur MP3 non chargé.", 'error'); return; }
+
+  // Demander le nom du fichier à l'utilisateur (par défaut : "mixo-YYYY-MM-DD")
+  const today = new Date().toISOString().slice(0, 10);
+  const defaultName = `mixo-${today}`;
+  const chosenName = await promptExportFileName(defaultName);
+  if (chosenName === null) return; // annulé
 
   showProgress('Préparation du mixage…', 0);
   try {
@@ -5485,8 +5605,9 @@ async function exportMix() {
     if (flush.length > 0) mp3Data.push(flush);
 
     const mp3Blob = new Blob(mp3Data, { type: 'audio/mp3' });
-    const ts = new Date().toISOString().slice(0,16).replace(/[:T]/g,'-');
-    const baseName = `podcast-${ts}`;
+    // Sanitiser le nom de fichier (retirer les caractères problématiques)
+    const safeName = (chosenName || defaultName).replace(/[<>:"/\\|?*]/g, '_').trim() || defaultName;
+    const baseName = safeName;
 
     showProgress('Terminé', 100);
     await new Promise(r => setTimeout(r, 200));
@@ -5901,15 +6022,11 @@ document.getElementById('btnMicTest').addEventListener('click', async () => {
 });
 document.getElementById('btnPause').addEventListener('click', pauseRecording);
 document.getElementById('btnStop').addEventListener('click', stopRecording);
-document.getElementById('padVol').addEventListener('input', e => {
+document.getElementById('monitorVol').addEventListener('input', e => {
   const v = e.target.value / 100;
   if (state.padsGain) state.padsGain.gain.value = v;
-  document.getElementById('padVolVal').textContent = e.target.value + '%';
-});
-document.getElementById('tracksMonitorVol').addEventListener('input', e => {
-  const v = e.target.value / 100;
   if (state.tracksMonitorGain) state.tracksMonitorGain.gain.value = v;
-  document.getElementById('tracksMonitorVolVal').textContent = e.target.value + '%';
+  document.getElementById('monitorVolVal').textContent = e.target.value + '%';
 });
 document.getElementById('fileInput').addEventListener('change', e => {
   const f = e.target.files[0]; if (!f) return;
@@ -6719,6 +6836,32 @@ document.addEventListener('keydown', e => {
       else if (state.selectedKind === 'voice') removeVoiceClip(state.selectedId);
       return;
     }
+  }
+  // Flèches gauche/droite : reculer / avancer le playhead de 3 secondes (uniquement dans l'éditeur)
+  if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight')
+      && state.take
+      && !document.getElementById('editorPanel').classList.contains('hidden')) {
+    e.preventDefault();
+    const delta = (e.key === 'ArrowRight') ? 3 : -3;
+    const current = (state.playback.startAtTime || 0);
+    const newT = Math.max(0, Math.min(state.take.duration, current + delta));
+    setPlayheadTime(newT);
+    updateMixDurationDisplay();
+    // Si on est en lecture, on relance depuis la nouvelle position
+    if (state.playback.active) {
+      stopMixPlayback();
+      state.playback.startAtTime = newT;
+      playMix();
+    } else {
+      // Auto-scroll pour suivre le playhead s'il sort de la zone visible
+      const container = document.getElementById('timelineContainer');
+      if (container) {
+        const x = TRACK_HEAD_W + newT * state.zoomPxPerSec;
+        if (x < container.scrollLeft + 80) container.scrollLeft = Math.max(0, x - 80);
+        else if (x > container.scrollLeft + container.clientWidth - 80) container.scrollLeft = x - container.clientWidth + 80;
+      }
+    }
+    return;
   }
   const idx = e.key === '0' ? 9 : parseInt(e.key) - 1;
   if (!isNaN(idx) && idx >= 0 && idx < state.pads.length) {
