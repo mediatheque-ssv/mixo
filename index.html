@@ -866,7 +866,8 @@
   }
   .voice-clip-handle::before { content:'⋮⋮'; margin-right: 6px; letter-spacing: -2px; opacity: 0.7; flex-shrink: 0; }
   .voice-clip-name {
-    flex: 1; overflow: hidden; text-overflow: ellipsis;
+    flex: 0 1 auto; max-width: 100%;
+    overflow: hidden; text-overflow: ellipsis;
     padding: 1px 4px; border-radius: 2px; cursor: text;
     user-select: none;
   }
@@ -884,31 +885,31 @@
   }
   .voice-clip.dragging { z-index: 20; box-shadow: inset 0 0 0 2px #fff; }
   .voice-clip.dragging .voice-clip-handle { cursor: grabbing; }
-  /* Boutons dans la barre laiton (clips voix et events) : toujours visibles, intégrés */
+  /* Boutons dans la barre laiton (clips voix et events) : toujours visibles, intégrés au métal */
   .voice-clip-del, .event-block-del, .clip-info-btn {
-    width: 16px; height: 14px;
+    width: 18px; height: 14px;
     border-radius: 2px;
-    background: rgba(0,0,0,0.25);
-    color: rgba(26,24,22,0.85);
-    border: 1px solid rgba(26,24,22,0.3);
-    font-size: 11px; line-height: 1;
+    background: transparent;
+    color: rgba(26,24,22,0.65);
+    border: none;
+    font-size: 13px; line-height: 1;
     cursor: pointer; font-weight: 700;
     display: flex; align-items: center; justify-content: center;
     padding: 0;
     flex-shrink: 0;
     z-index: 7;
     position: static;
+    transition: color 0.12s, background 0.12s;
   }
-  .clip-info-btn { font-size: 13px; letter-spacing: -1px; }
+  /* Le premier bouton (info ⋯) est poussé à droite, le bouton × reste collé à côté */
+  .clip-info-btn { margin-left: auto; font-size: 15px; letter-spacing: -1px; }
   .voice-clip-del:hover, .event-block-del:hover {
     background: rgba(239,68,68,0.85);
     color: #fff;
-    border-color: #b91c1c;
   }
   .clip-info-btn:hover {
-    background: rgba(26,24,22,0.6);
-    color: var(--brass);
-    border-color: var(--brass);
+    background: rgba(26,24,22,0.35);
+    color: #1a1816;
   }
   /* Poignées de rognage des clips voix (mêmes mécaniques que les événements) */
   .voice-clip .clip-trim-handle {
@@ -3502,6 +3503,8 @@ function setupVoiceClipInteraction(el, clip, track) {
   let drag = null;
   function onHandleDown(e) {
     if (e.button !== undefined && e.button !== 0) return;
+    // Ignorer les clics sur les boutons intégrés à la barre laiton (×, ⋯)
+    if (e.target.closest('button')) return;
     const isCtrl = e.ctrlKey || e.metaKey;
     const fromName = e.target.closest('.voice-clip-name');
     // Clic sur le nom (sans Ctrl) : on retarde le drag pour ne pas casser le dblclick (édition).
