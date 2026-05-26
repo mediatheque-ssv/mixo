@@ -858,10 +858,11 @@
     position: absolute; top: 0; left: 0; right: 0; height: 18px;
     background: linear-gradient(180deg, rgba(212,175,55,0.7) 0%, rgba(160,132,22,0.7) 100%);
     cursor: grab; z-index: 3;
-    display: flex; align-items: center; padding-left: 8px;
+    display: flex; align-items: center; padding: 0 4px 0 8px;
     font-size: 10px; font-weight: 700; color: #1a1816;
     text-transform: uppercase; letter-spacing: 0.6px;
     text-shadow: 0 1px 0 rgba(255,255,255,0.2);
+    gap: 2px;
   }
   .voice-clip-handle::before { content:'⋮⋮'; margin-right: 6px; letter-spacing: -2px; opacity: 0.7; flex-shrink: 0; }
   .voice-clip-name {
@@ -883,15 +884,32 @@
   }
   .voice-clip.dragging { z-index: 20; box-shadow: inset 0 0 0 2px #fff; }
   .voice-clip.dragging .voice-clip-handle { cursor: grabbing; }
-  .voice-clip-del {
-    position: absolute; top: 22px; right: 4px;
-    width: 18px; height: 18px;
-    border-radius: 50%; background: rgba(0,0,0,0.7);
-    color: var(--brass); border: 1px solid rgba(212,175,55,0.4);
-    font-size: 11px; line-height: 1; cursor: pointer;
-    display: none; align-items: center; justify-content: center; padding: 0; z-index: 6;
+  /* Boutons dans la barre laiton (clips voix et events) : toujours visibles, intégrés */
+  .voice-clip-del, .event-block-del, .clip-info-btn {
+    width: 16px; height: 14px;
+    border-radius: 2px;
+    background: rgba(0,0,0,0.25);
+    color: rgba(26,24,22,0.85);
+    border: 1px solid rgba(26,24,22,0.3);
+    font-size: 11px; line-height: 1;
+    cursor: pointer; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0;
+    flex-shrink: 0;
+    z-index: 7;
+    position: static;
   }
-  .voice-clip:hover .voice-clip-del { display: flex; }
+  .clip-info-btn { font-size: 13px; letter-spacing: -1px; }
+  .voice-clip-del:hover, .event-block-del:hover {
+    background: rgba(239,68,68,0.85);
+    color: #fff;
+    border-color: #b91c1c;
+  }
+  .clip-info-btn:hover {
+    background: rgba(26,24,22,0.6);
+    color: var(--brass);
+    border-color: var(--brass);
+  }
   /* Poignées de rognage des clips voix (mêmes mécaniques que les événements) */
   .voice-clip .clip-trim-handle {
     position: absolute; top: 18px; bottom: 0; width: 6px;
@@ -903,23 +921,6 @@
   .voice-clip:hover .clip-trim-handle { background: rgba(212,175,55,0.4); }
   .voice-clip .clip-trim-handle:hover,
   .voice-clip .clip-trim-handle.active { background: rgba(212,175,55,0.85) !important; }
-  /* Bouton propriétés (ouvre l'inspecteur) sur les clips et bruitages */
-  .clip-info-btn {
-    position: absolute; top: 22px; right: 26px;
-    width: 18px; height: 18px;
-    border-radius: 50%; background: rgba(0,0,0,0.7);
-    color: var(--brass); border: 1px solid rgba(212,175,55,0.4);
-    font-size: 13px; line-height: 1; cursor: pointer; font-weight: 700;
-    display: none; align-items: center; justify-content: center; padding: 0; z-index: 6;
-    letter-spacing: -1px;
-  }
-  .clip-info-btn:hover {
-    background: rgba(212,175,55,0.25);
-    color: #fff;
-    border-color: var(--brass);
-  }
-  .voice-clip:hover .clip-info-btn,
-  .event-block:hover .clip-info-btn { display: flex; }
 
   /* Zone de sélection sur la voix : style "highlight laiton" */
   .voice-selection {
@@ -948,12 +949,13 @@
     position: absolute; top: 0; left: 0; right: 0; height: 18px;
     background: linear-gradient(180deg, rgba(212,175,55,0.7) 0%, rgba(160,132,22,0.7) 100%);
     cursor: grab; z-index: 3;
-    display: flex; align-items: center; padding: 0 8px;
+    display: flex; align-items: center; padding: 0 4px 0 8px;
     font-size: 10px; font-weight: 700; color: #1a1816;
     text-transform: uppercase; letter-spacing: 0.6px;
     text-shadow: 0 1px 0 rgba(255,255,255,0.2);
     overflow: hidden;
     white-space: nowrap;
+    gap: 2px;
   }
   .event-block-handle::before { content: '⋮⋮'; margin-right: 6px; letter-spacing: -2px; opacity: 0.7; flex-shrink: 0; }
   .event-block:hover .event-block-handle { background: linear-gradient(180deg, var(--brass) 0%, var(--brass-deep) 100%); }
@@ -976,16 +978,6 @@
   }
   .event-block.muted { opacity: 0.45; filter: grayscale(0.5); }
   .event-block-name { pointer-events: none; overflow: hidden; text-overflow: ellipsis; flex: 1; }
-  .event-block-del {
-    position: absolute; top: 22px; right: 4px;
-    width: 18px; height: 18px;
-    border-radius: 50%; background: rgba(0,0,0,0.7);
-    color: var(--brass); border: 1px solid rgba(212,175,55,0.4);
-    font-size: 11px; line-height: 1; cursor: pointer;
-    display: none; align-items: center; justify-content: center; padding: 0; z-index: 6;
-  }
-  .event-block:hover .event-block-del { display: flex; }
-
   /* Ghost qui suit la souris pendant le drag d'un pad */
   .drag-ghost {
     position: fixed; pointer-events: none;
@@ -1450,10 +1442,11 @@
   <!-- Barre d'actions sur sélection (apparaît quand on a sélectionné une zone de voix) -->
   <div id="selectionToolbar" class="selection-toolbar hidden">
     <span class="selection-toolbar-info" id="selectionInfo">—</span>
+    <button id="btnSelSplit" title="Scinder en 3 clips (avant / sélection / après)">Scinder</button>
     <button id="btnSelMute" title="Silencer (M)">Silencer</button>
-    <button id="btnSelCut" title="Couper vers un pad (Ctrl+X)">Couper → pad</button>
-    <button id="btnSelCopy" title="Copier vers un pad (Ctrl+C)">Copier → pad</button>
-    <button id="btnSelDelete" class="danger" title="Supprimer (Suppr)">🗑 Supprimer</button>
+    <button id="btnSelCut" title="Couper la zone vers un pad (Ctrl+Maj+X)">Couper → pad</button>
+    <button id="btnSelCopy" title="Copier la zone vers un pad (Ctrl+Maj+C)">Copier → pad</button>
+    <button id="btnSelDelete" class="danger" title="Supprimer (Suppr)">Supprimer</button>
     <button id="btnSelClear" style="margin-left:auto">Annuler la sélection</button>
   </div>
 
@@ -3389,12 +3382,12 @@ function renderVoiceClipsInTrack(container, track) {
     el.innerHTML = `
       <div class="voice-clip-handle" data-handle="${clip.id}">
         <span class="voice-clip-name" data-clip-name="${clip.id}" contenteditable="false" title="Double-clic pour renommer">${escapeHtml(clip.name)}</span>
+        <button class="clip-info-btn" data-info="${clip.id}" data-kind="voice" title="Propriétés">⋯</button>
+        <button class="voice-clip-del" data-del="${clip.id}" title="Supprimer ce clip">×</button>
       </div>
       <canvas data-clip-canvas="${clip.id}"></canvas>
       <div class="clip-trim-handle left" data-trim="left"></div>
       <div class="clip-trim-handle right" data-trim="right"></div>
-      <button class="clip-info-btn" data-info="${clip.id}" data-kind="voice" title="Propriétés">⋯</button>
-      <button class="voice-clip-del" data-del="${clip.id}" title="Supprimer ce clip">×</button>
     `;
     container.appendChild(el);
     drawClipWaveform(el.querySelector('canvas'), clip, track.color, track.volume ?? 1);
@@ -3511,9 +3504,28 @@ function setupVoiceClipInteraction(el, clip, track) {
     if (e.button !== undefined && e.button !== 0) return;
     const isCtrl = e.ctrlKey || e.metaKey;
     const fromName = e.target.closest('.voice-clip-name');
-    // Clic sur le nom : on ne fait rien ici (laisser le navigateur gérer dblclick → édition).
-    // Le drag du clip ne se déclenche que depuis le reste de la barre laiton.
+    // Clic sur le nom (sans Ctrl) : on retarde le drag pour ne pas casser le dblclick (édition).
+    // Si la souris bouge → on déclenche le drag. Sinon, le navigateur peut détecter le dblclick normalement.
     if (fromName && !isCtrl) {
+      const startX0 = e.clientX, startY0 = e.clientY;
+      let armed = true;
+      const onArmedMove = (ev) => {
+        if (!armed) return;
+        if (Math.abs(ev.clientX - startX0) < 4 && Math.abs(ev.clientY - startY0) < 4) return;
+        armed = false;
+        document.removeEventListener('mousemove', onArmedMove);
+        document.removeEventListener('mouseup', onArmedUp);
+        startDrag(ev);
+      };
+      const onArmedUp = () => {
+        if (!armed) return;
+        armed = false;
+        document.removeEventListener('mousemove', onArmedMove);
+        document.removeEventListener('mouseup', onArmedUp);
+        // Pas de mouvement : on laisse le navigateur gérer le clic / dblclick normalement
+      };
+      document.addEventListener('mousemove', onArmedMove);
+      document.addEventListener('mouseup', onArmedUp);
       return;
     }
     // Ctrl+clic (sans bouger) : ouvrir l'inspecteur. Ctrl+drag : drag avec attached.
@@ -3692,8 +3704,12 @@ function setupVoiceClipInteraction(el, clip, track) {
     document.removeEventListener('mousemove', onBodyMove);
     document.removeEventListener('mouseup', onBodyUp);
     if (!sel.moved) {
-      state.voiceSelection = null;
-      renderTimeline();
+      // Clic simple sans mouvement : on ne re-render PAS pour préserver le DOM
+      // (sinon le 2e clic d'un éventuel double-clic ne sera pas détecté car la cible aura changé)
+      if (state.voiceSelection) {
+        state.voiceSelection = null;
+        // pas de renderTimeline ici
+      }
     } else if (state.voiceSelection && Math.abs(state.voiceSelection.end - state.voiceSelection.start) < 0.05) {
       state.voiceSelection = null;
       renderTimeline();
@@ -3812,18 +3828,21 @@ function renderEventsInTrack(container, track) {
     }
 
     block.innerHTML = `
-      <div class="event-block-handle"><span class="event-block-name">${escapeHtml(ev.padName)}${ev.muted ? ' (muet)' : ''}</span></div>
+      <div class="event-block-handle">
+        <span class="event-block-name">${escapeHtml(ev.padName)}${ev.muted ? ' (muet)' : ''}</span>
+        <button class="clip-info-btn" data-info="${ev.id}" data-kind="event" title="Propriétés">⋯</button>
+        <button class="event-block-del" data-del="${ev.id}">×</button>
+      </div>
       <canvas data-event-canvas="${ev.id}"></canvas>
       ${overlays}
       <div class="event-trim-handle left" data-trim="left"></div>
       <div class="event-trim-handle right" data-trim="right"></div>
-      <button class="clip-info-btn" data-info="${ev.id}" data-kind="event" style="z-index:13" title="Propriétés">⋯</button>
-      <button class="event-block-del" data-del="${ev.id}" style="z-index:13">×</button>
     `;
     container.appendChild(block);
     drawEventWaveform(block.querySelector('canvas'), ev, track.volume ?? 1);
     block.addEventListener('click', e => {
       if (e.target.dataset.del || e.target.dataset.trim) return;
+      const wasSelected = (state.selectedKind === 'event' && state.selectedId === ev.id);
       state.selectedKind = 'event';
       state.selectedId = ev.id;
       state.activeTrackId = track.id;
@@ -3832,13 +3851,15 @@ function renderEventsInTrack(container, track) {
       if (e.ctrlKey || e.metaKey) {
         state.inspectorRequestedFor = 'event:' + ev.id;
         state.inspectorDismissedFor = null;
+        renderTimeline();
       } else {
         // Clic simple : reset l'éventuelle request précédente sur cet event
         if (state.inspectorRequestedFor === 'event:' + ev.id) {
           state.inspectorRequestedFor = null;
         }
+        // On évite de re-render si l'event était déjà sélectionné : préserve le DOM pour permettre le dblclick
+        if (!wasSelected) renderTimeline();
       }
-      renderTimeline();
     });
     block.querySelector('.event-block-del').addEventListener('click', e => { e.stopPropagation(); deleteEvent(ev.id); });
     // Bouton ⋯ ouvre l'inspecteur
@@ -4316,8 +4337,9 @@ function setPlayheadTime(t) {
 
 // ===================== Actions sur sélection voix =====================
 document.getElementById('btnSelMute').addEventListener('click', () => applySelectionAction('mute'));
-document.getElementById('btnSelCut').addEventListener('click', () => applySelectionAction('cut'));
-document.getElementById('btnSelCopy').addEventListener('click', () => applySelectionAction('copy'));
+document.getElementById('btnSelSplit').addEventListener('click', splitAtPlayhead);
+document.getElementById('btnSelCut').addEventListener('click', () => applySelectionAction('cutToPad'));
+document.getElementById('btnSelCopy').addEventListener('click', () => applySelectionAction('copyToPad'));
 document.getElementById('btnSelDelete').addEventListener('click', () => applySelectionAction('delete'));
 document.getElementById('btnSelClear').addEventListener('click', () => { state.voiceSelection = null; renderTimeline(); });
 
@@ -4348,7 +4370,7 @@ async function applySelectionAction(action) {
   const srcSelStart = targetClip.sourceStart + localStart;
   const srcSelEnd = targetClip.sourceStart + localEnd;
 
-  if (action === 'copy' || action === 'cut') {
+  if (action === 'copyToPad' || action === 'cutToPad') {
     const sourceBuf = getClipBuffer(targetClip);
     if (!sourceBuf) { showStatus("Buffer audio introuvable.", 'error'); return; }
     const padBuffer = extractAudioBuffer(sourceBuf, srcSelStart, srcSelEnd);
@@ -4357,17 +4379,72 @@ async function applySelectionAction(action) {
     if (pad) showStatus(`Pad "${pad.name}" créé`, 'success');
   }
 
+  if (action === 'copy' || action === 'cut') {
+    // Presse-papier interne : on stocke un AudioBuffer du contenu sélectionné
+    const sourceBuf = getClipBuffer(targetClip);
+    if (!sourceBuf) { showStatus("Buffer audio introuvable.", 'error'); return; }
+    const buf = extractAudioBuffer(sourceBuf, srcSelStart, srcSelEnd);
+    state.voiceClipboard = {
+      buffer: buf,
+      name: targetClip.name || 'Clip',
+      duration: srcSelEnd - srcSelStart,
+    };
+    if (action === 'copy') showStatus(`Sélection copiée (${(srcSelEnd - srcSelStart).toFixed(2)}s)`, 'info');
+    else showStatus(`Sélection coupée (${(srcSelEnd - srcSelStart).toFixed(2)}s)`, 'info');
+  }
+
   if (action === 'mute') {
     splitClipForMute(targetClip, targetTrack, localStart, localEnd);
-  } else if (action === 'cut' || action === 'delete') {
+  } else if (action === 'cut' || action === 'delete' || action === 'cutToPad') {
+    // Ripple delete : la suite s'aimante au début de la sélection
     removeRangeFromClip(targetClip, targetTrack, localStart, localEnd);
   }
 
   state.voiceSelection = null;
   recomputeDuration();
-  // copy ne modifie pas la timeline, donc on ne push que pour les autres
-  if (action !== 'copy') pushHistory();
+  // copy et copyToPad ne modifient pas la timeline, donc on ne push pas l'historique
+  if (action !== 'copy' && action !== 'copyToPad') pushHistory();
   renderTimeline();
+}
+
+// Colle le presse-papier de zone voix au playhead, dans la piste voix active (ou la première trouvée).
+async function pasteVoiceClipboardAtPlayhead() {
+  if (!state.voiceClipboard || !state.voiceClipboard.buffer) {
+    showStatus("Rien à coller.", 'info');
+    return;
+  }
+  if (!state.take) {
+    showStatus("Ouvre d'abord un projet ou enregistre une prise.", 'info');
+    return;
+  }
+  // Trouver la piste voix active, ou à défaut la première
+  let voiceTrack = state.take.tracks.find(t => t.type === 'voice' && t.id === state.activeTrackId);
+  if (!voiceTrack) voiceTrack = state.take.tracks.find(t => t.type === 'voice');
+  if (!voiceTrack) {
+    // Aucune piste voix : on en crée une
+    voiceTrack = makeVoiceTrack();
+    state.take.tracks.push(voiceTrack);
+  }
+  const at = state.playback.startAtTime || 0;
+  // On stocke le buffer du presse-papier dans take.voiceBuffers et on crée un clip qui pointe dessus
+  const buf = state.voiceClipboard.buffer;
+  const bufferId = uid('vb');
+  state.take.voiceBuffers[bufferId] = buf;
+  const newClip = {
+    id: uid('vc'), bufferId,
+    sourceStart: 0, sourceEnd: buf.duration,
+    time: at, volume: 1, muted: false, fadeIn: 0, fadeOut: 0,
+    name: state.voiceClipboard.name || 'Collage',
+  };
+  voiceTrack.clips.push(newClip);
+  voiceTrack.clips.sort((a, b) => a.time - b.time);
+  state.activeTrackId = voiceTrack.id;
+  state.selectedKind = 'voice';
+  state.selectedId = newClip.id;
+  recomputeDuration();
+  pushHistory();
+  renderTimeline();
+  showStatus(`Collé à ${formatTime(at)}`, 'success');
 }
 
 function extractAudioBuffer(srcBuffer, startSec, endSec) {
@@ -4432,6 +4509,8 @@ function removeRangeFromClip(clip, track, localStart, localEnd) {
   if (localEnd <= 0 || localStart >= clipDur) return;
   localStart = Math.max(0, localStart);
   localEnd = Math.min(clipDur, localEnd);
+  const removedDuration = localEnd - localStart;
+  if (removedDuration <= 0) return;
 
   const idx = track.clips.indexOf(clip);
   if (idx < 0) return;
@@ -4452,12 +4531,41 @@ function removeRangeFromClip(clip, track, localStart, localEnd) {
       id: uid('vc'), bufferId: clip.bufferId,
       sourceStart: clip.sourceStart + localEnd,
       sourceEnd: clip.sourceEnd,
-      time: clip.time + localEnd,
+      // Ripple : le morceau de droite vient s'aimanter sur la suppression (au lieu de garder son temps absolu)
+      time: clip.time + localStart,
       volume: clip.volume, muted: clip.muted, fadeIn: 0, fadeOut: clip.fadeOut,
       name: baseName,
     });
   }
   track.clips.splice(idx, 1, ...newClips);
+
+  // Ripple sur les clips/events de cette piste et des pistes liées (même couleur) qui sont APRÈS la sélection.
+  // Convention : on décale tout ce qui démarre à >= clip.time + localEnd (= la fin absolue de la suppression).
+  const ripplePoint = clip.time + localEnd;
+  rippleShiftAfter(ripplePoint, removedDuration, track.color);
+}
+
+// Décale (vers la gauche) tous les clips voix et events qui démarrent à partir de `fromTime`,
+// d'un montant `delta` (en secondes). Limité aux pistes de la couleur passée (groupe lié).
+// Si groupColor est null/undefined → applique à toutes les pistes.
+function rippleShiftAfter(fromTime, delta, groupColor) {
+  if (delta <= 0 || !state.take) return;
+  for (const t of state.take.tracks) {
+    if (groupColor && t.color !== groupColor) continue;
+    if (t.type === 'voice') {
+      for (const c of t.clips) {
+        if (c.time >= fromTime - 0.0001) {
+          c.time = Math.max(0, c.time - delta);
+        }
+      }
+    } else if (t.type === 'events') {
+      for (const ev of t.events) {
+        if (ev.time >= fromTime - 0.0001) {
+          ev.time = Math.max(0, ev.time - delta);
+        }
+      }
+    }
+  }
 }
 
 // ===================== Scinder : sélection (2 coupes sur le clip de la sélection) ou playhead (1 coupe sur toutes les pistes) =====================
@@ -4491,7 +4599,10 @@ function splitAtPlayhead() {
 // Si onlyClipId est fourni, ne coupe QUE ce clip (utile pour la sélection sur un clip donné).
 function splitAtTimes(times, onlyClipId) {
   let didSomething = false;
-  const sorted = [...times].sort((a, b) => a - b);
+  // Important : on trie DESC pour couper de droite à gauche.
+  // Sinon, la 1ère coupe remplace le clip original par 2 nouveaux clips, et la coupe suivante
+  // sur le même clip ne trouve plus rien (cas onlyClipId), ou affecte un nouveau clip (cas global).
+  const sorted = [...times].sort((a, b) => b - a);
   for (const t of sorted) {
     // Si onlyClipId : on cible précisément ce clip
     if (onlyClipId) {
@@ -4499,7 +4610,14 @@ function splitAtTimes(times, onlyClipId) {
       if (!f) continue;
       const c = f.clip;
       if (!(t > c.time + 0.01 && t < c.time + (c.sourceEnd - c.sourceStart) - 0.01)) continue;
+      // Après la coupe à t, le clip original est remplacé par 2 morceaux.
+      // Le morceau de gauche conserve clip.time et le bufferId, mais avec un NOUVEAU id.
+      // Pour que les coupes suivantes (à un t plus petit) le retrouvent, on récupère son nouvel id.
+      const leftBeforeIdx = f.track.clips.indexOf(c);
       doSplit(f.track, c, t);
+      // Le morceau de gauche est maintenant à leftBeforeIdx
+      const newLeftClip = f.track.clips[leftBeforeIdx];
+      if (newLeftClip) onlyClipId = newLeftClip.id;
       didSomething = true;
       continue;
     }
@@ -6440,14 +6558,31 @@ document.addEventListener('keydown', e => {
     }
     return;
   }
-  if ((e.ctrlKey || e.metaKey) && (e.key === 'x' || e.key === 'X')) {
+  // Ctrl+Maj+X / Ctrl+Maj+C : couper / copier vers un pad (raccourcis étendus, plus rare)
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'x' || e.key === 'X')) {
+    e.preventDefault();
+    if (state.voiceSelection) applySelectionAction('cutToPad');
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'c' || e.key === 'C')) {
+    e.preventDefault();
+    if (state.voiceSelection) applySelectionAction('copyToPad');
+    return;
+  }
+  // Ctrl+X / Ctrl+C / Ctrl+V : presse-papier interne (sélection voix)
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'x' || e.key === 'X')) {
     e.preventDefault();
     if (state.voiceSelection) applySelectionAction('cut');
     return;
   }
-  if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) {
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'c' || e.key === 'C')) {
     e.preventDefault();
     if (state.voiceSelection) applySelectionAction('copy');
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === 'v' || e.key === 'V')) {
+    e.preventDefault();
+    pasteVoiceClipboardAtPlayhead();
     return;
   }
   if (e.key === ' ') {
