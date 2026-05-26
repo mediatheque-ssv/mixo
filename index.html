@@ -899,25 +899,25 @@
     background: transparent;
     border: none;
     padding: 0;
-    color: inherit; /* hérite de la couleur sombre de la barre laiton */
-    opacity: 0.55;
-    cursor: pointer; font-weight: 700;
+    color: inherit;
+    opacity: 0.5;
+    cursor: pointer; font-weight: 400;
     line-height: 1;
     display: flex; align-items: center; justify-content: center;
     flex-shrink: 0;
     z-index: 7;
     position: static;
     transition: opacity 0.12s, color 0.12s;
-    width: 16px; height: 14px;
+    width: 14px; height: 14px;
   }
-  .voice-clip-del, .event-block-del { font-size: 14px; }
+  .voice-clip-del, .event-block-del { font-size: 13px; }
   /* Le ⋯ est poussé à droite (premier des deux), le × suit collé */
   .clip-info-btn {
     margin-left: auto;
-    font-size: 16px; letter-spacing: -2px;
+    font-size: 14px; letter-spacing: -2px;
   }
-  .voice-clip-del:hover, .event-block-del:hover { opacity: 1; color: #5a1010; }
-  .clip-info-btn:hover { opacity: 1; }
+  .voice-clip-del:hover, .event-block-del:hover { opacity: 1; color: #5a1010; background: transparent; }
+  .clip-info-btn:hover { opacity: 1; background: transparent; }
   /* Poignées de rognage des clips voix (mêmes mécaniques que les événements) */
   .voice-clip .clip-trim-handle {
     position: absolute; top: 18px; bottom: 0; width: 6px;
