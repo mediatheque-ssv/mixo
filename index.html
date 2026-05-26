@@ -896,9 +896,12 @@
   .voice-clip.dragging .voice-clip-handle { cursor: grabbing; }
   /* Boutons dans la barre laiton : gravés dans le métal, pas de fond, juste le caractère */
   .voice-clip-del, .event-block-del, .clip-info-btn {
-    background: transparent;
-    border: none;
-    padding: 0;
+    background: none !important;
+    border: none !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+    border-radius: 0 !important;
     color: inherit;
     opacity: 0.5;
     cursor: pointer; font-weight: 400;
@@ -909,6 +912,7 @@
     position: static;
     transition: opacity 0.12s, color 0.12s;
     width: 14px; height: 14px;
+    transform: none !important;
   }
   .voice-clip-del, .event-block-del { font-size: 13px; }
   /* Le ⋯ est poussé à droite (premier des deux), le × suit collé */
@@ -916,8 +920,20 @@
     margin-left: auto;
     font-size: 14px; letter-spacing: -2px;
   }
-  .voice-clip-del:hover, .event-block-del:hover { opacity: 1; color: #5a1010; background: transparent; }
-  .clip-info-btn:hover { opacity: 1; background: transparent; }
+  .voice-clip-del:hover, .event-block-del:hover,
+  .voice-clip-del:hover:not(:disabled), .event-block-del:hover:not(:disabled) {
+    opacity: 1; color: #5a1010;
+    background: none !important; box-shadow: none !important;
+  }
+  .clip-info-btn:hover, .clip-info-btn:hover:not(:disabled) {
+    opacity: 1;
+    background: none !important; box-shadow: none !important;
+  }
+  .voice-clip-del:active, .event-block-del:active, .clip-info-btn:active {
+    transform: none !important;
+    background: none !important;
+    box-shadow: none !important;
+  }
   /* Poignées de rognage des clips voix (mêmes mécaniques que les événements) */
   .voice-clip .clip-trim-handle {
     position: absolute; top: 18px; bottom: 0; width: 6px;
