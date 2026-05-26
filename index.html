@@ -651,6 +651,15 @@
     font-variant-numeric: tabular-nums; font-family: "Courier New", monospace;
     text-transform: uppercase; letter-spacing: 1px;
   }
+  /* Boutons avec icône SVG inline + label */
+  .btn-with-icon {
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn-with-icon svg {
+    color: var(--brass);
+    flex-shrink: 0;
+  }
+  .btn-with-icon:hover svg { color: #f4cf60; }
 
   /* Timeline : zone "écran" sombre */
   .timeline-container {
@@ -1445,8 +1454,22 @@
     <span class="selection-toolbar-info" id="selectionInfo">—</span>
     <button id="btnSelSplit" title="Scinder en 3 clips (avant / sélection / après)">Scinder</button>
     <button id="btnSelMute" title="Silencer (M)">Silencer</button>
-    <button id="btnSelCut" title="Couper la zone vers un pad (Ctrl+Maj+X)">Couper → pad</button>
-    <button id="btnSelCopy" title="Copier la zone vers un pad (Ctrl+Maj+C)">Copier → pad</button>
+    <button id="btnSelCopy" class="btn-with-icon" title="Pader : créer un pad à partir de la zone sélectionnée (Ctrl+Maj+C)">
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="5" y="5" width="9" height="9" rx="1.5"/>
+        <path d="M11 5V3.5A1.5 1.5 0 0 0 9.5 2h-6A1.5 1.5 0 0 0 2 3.5v6A1.5 1.5 0 0 0 3.5 11H5"/>
+      </svg>
+      Pader
+    </button>
+    <button id="btnSelCut" class="btn-with-icon" title="Pader & couper : créer un pad et retirer la zone (Ctrl+Maj+X)">
+      <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="4" cy="4" r="2"/>
+        <circle cx="4" cy="12" r="2"/>
+        <path d="M5.5 5.5 14 14"/>
+        <path d="M5.5 10.5 14 2"/>
+      </svg>
+      Pader & couper
+    </button>
     <button id="btnSelDelete" class="danger" title="Supprimer (Suppr)">Supprimer</button>
     <button id="btnSelClear" style="margin-left:auto">Annuler la sélection</button>
   </div>
