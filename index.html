@@ -335,6 +335,10 @@
 
   .mic-row { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
   .mic-row select { flex: 1; min-width: 200px; }
+  #btnMicTest.active {
+    color: var(--led-red);
+    box-shadow: 0 0 8px rgba(239,68,68,0.4), inset 0 1px 2px rgba(0,0,0,0.4);
+  }
 
   /* VU-mètre type LED bargraph */
   .vu-container {
@@ -1200,7 +1204,8 @@
   body.presenter-mode #exportsPanel,
   body.presenter-mode .resizer-vertical,
   body.presenter-mode .mic-row select,
-  body.presenter-mode .mic-row .vu-container {
+  body.presenter-mode .mic-row .vu-container,
+  body.presenter-mode #btnMicTest {
     display: none !important;
   }
   body.presenter-mode .panel {
@@ -1368,6 +1373,7 @@
   <div class="panel-header"><div class="panel-title">Microphone</div></div>
   <div class="mic-row">
     <select id="micSelect"><option>Chargement…</option></select>
+    <button id="btnMicTest" title="Activer le micro pour vérifier le niveau (le VU-mètre s'allume)">Tester</button>
     <div class="vu-container"><div id="vuBar" class="vu-bar"></div></div>
   </div>
   <canvas id="waveformLive" width="800" height="60"></canvas>
@@ -2018,6 +2024,9 @@ function ensureAudioCtx() {
 
 async function listMics() {
   try {
+    // On demande la permission UNE FOIS (sinon les noms des micros sont anonymisés)
+    // puis on coupe immédiatement le stream pour ne pas laisser le micro actif au repos
+    // (Chrome dégrade la qualité audio sortante quand un micro est actif en permanence).
     const tmp = await navigator.mediaDevices.getUserMedia({ audio: true });
     tmp.getTracks().forEach(t => t.stop());
     const devices = await navigator.mediaDevices.enumerateDevices();
@@ -2031,10 +2040,27 @@ async function listMics() {
       opt.textContent = m.label || `Micro ${i+1}`;
       select.appendChild(opt);
     });
-    await setupMic(mics[0].deviceId);
+    // On retient juste le deviceId par défaut, on n'active PAS le stream
+    state.selectedMicDeviceId = mics[0].deviceId;
   } catch (e) {
     showStatus('Accès au micro refusé.', 'error');
   }
+}
+
+// Coupe proprement le stream micro et déconnecte la source audio
+function stopMic() {
+  if (state.micStream) {
+    state.micStream.getTracks().forEach(t => t.stop());
+    state.micStream = null;
+  }
+  if (state.micSource) {
+    try { state.micSource.disconnect(); } catch(e) {}
+    state.micSource = null;
+  }
+  // Stop la boucle VU et reset l'affichage
+  if (state.vuRafId) { cancelAnimationFrame(state.vuRafId); state.vuRafId = null; }
+  const bar = document.getElementById('vuBar');
+  if (bar) bar.style.width = '0%';
 }
 
 async function setupMic(deviceId) {
@@ -2140,6 +2166,18 @@ function pickMimeType() {
 }
 
 async function startRecording() {
+  // S'assurer que le micro est démarré avant l'enregistrement
+  if (!state.micStream) {
+    try {
+      await setupMic(state.selectedMicDeviceId);
+    } catch (e) {
+      showStatus('Accès au micro refusé.', 'error');
+      return;
+    }
+  }
+  // Réinit visuel du bouton "Tester" si on était en mode test
+  const btnTest = document.getElementById('btnMicTest');
+  if (btnTest) { btnTest.textContent = 'Tester'; btnTest.classList.remove('active'); }
   if (!state.audioCtx) { showStatus('Sélectionne un micro d\'abord.', 'error'); return; }
   await state.audioCtx.resume();
 
@@ -2308,6 +2346,11 @@ function stopRecording() {
   document.getElementById('timer').classList.remove('live');
   document.getElementById('timer').textContent = '00:00';
   document.getElementById('waveformLive').classList.remove('visible');
+  // Couper le micro : sinon Chrome dégrade la qualité audio sortante (filtrage anti-bruit auto)
+  // On le coupe après un petit délai pour laisser MediaRecorder finaliser le dernier chunk.
+  setTimeout(() => {
+    if (!state.isRecording) stopMic();
+  }, 400);
 }
 
 function updateTimer() {
@@ -5835,8 +5878,34 @@ document.addEventListener('keydown', e => {
 document.getElementById('helpModalClose').addEventListener('click', () => document.getElementById('helpModal').classList.remove('visible'));
 
 // ===================== Bindings micro/transport/volumes/fichier =====================
-document.getElementById('micSelect').addEventListener('change', e => setupMic(e.target.value));
+// Le sélecteur de micro mémorise juste le device choisi. Le micro ne démarre qu'au REC ou au test.
+document.getElementById('micSelect').addEventListener('change', e => {
+  state.selectedMicDeviceId = e.target.value;
+  // Si un test est en cours, on le redémarre avec le nouveau micro
+  if (state.micStream && !state.isRecording) {
+    setupMic(state.selectedMicDeviceId);
+  }
+});
 document.getElementById('btnRec').addEventListener('click', startRecording);
+// Bouton "Tester" : démarre/arrête le micro temporairement pour ajuster le niveau
+document.getElementById('btnMicTest').addEventListener('click', async () => {
+  const btn = document.getElementById('btnMicTest');
+  if (state.micStream) {
+    // Couper le test
+    stopMic();
+    btn.textContent = 'Tester';
+    btn.classList.remove('active');
+    return;
+  }
+  // Démarrer le test
+  try {
+    await setupMic(state.selectedMicDeviceId);
+    btn.textContent = 'Arrêter';
+    btn.classList.add('active');
+  } catch (e) {
+    showStatus('Accès au micro refusé.', 'error');
+  }
+});
 document.getElementById('btnPause').addEventListener('click', pauseRecording);
 document.getElementById('btnStop').addEventListener('click', stopRecording);
 document.getElementById('padVol').addEventListener('input', e => {
