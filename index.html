@@ -892,6 +892,34 @@
     display: none; align-items: center; justify-content: center; padding: 0; z-index: 6;
   }
   .voice-clip:hover .voice-clip-del { display: flex; }
+  /* Poignées de rognage des clips voix (mêmes mécaniques que les événements) */
+  .voice-clip .clip-trim-handle {
+    position: absolute; top: 18px; bottom: 0; width: 6px;
+    cursor: ew-resize; background: rgba(255,255,255,0);
+    transition: background 0.15s; z-index: 12;
+  }
+  .voice-clip .clip-trim-handle.left { left: 0; }
+  .voice-clip .clip-trim-handle.right { right: 0; }
+  .voice-clip:hover .clip-trim-handle { background: rgba(212,175,55,0.4); }
+  .voice-clip .clip-trim-handle:hover,
+  .voice-clip .clip-trim-handle.active { background: rgba(212,175,55,0.85) !important; }
+  /* Bouton propriétés (ouvre l'inspecteur) sur les clips et bruitages */
+  .clip-info-btn {
+    position: absolute; top: 22px; right: 26px;
+    width: 18px; height: 18px;
+    border-radius: 50%; background: rgba(0,0,0,0.7);
+    color: var(--brass); border: 1px solid rgba(212,175,55,0.4);
+    font-size: 13px; line-height: 1; cursor: pointer; font-weight: 700;
+    display: none; align-items: center; justify-content: center; padding: 0; z-index: 6;
+    letter-spacing: -1px;
+  }
+  .clip-info-btn:hover {
+    background: rgba(212,175,55,0.25);
+    color: #fff;
+    border-color: var(--brass);
+  }
+  .voice-clip:hover .clip-info-btn,
+  .event-block:hover .clip-info-btn { display: flex; }
 
   /* Zone de sélection sur la voix : style "highlight laiton" */
   .voice-selection {
@@ -3264,6 +3292,17 @@ function deleteTrack(trackId) {
   renderTimeline();
 }
 
+// Ouvre l'inspecteur pour un clip voix ou un bruitage, sélectionne l'élément, et garde l'inspecteur ouvert
+function openInspectorFor(kind, id, trackId) {
+  state.selectedKind = kind;
+  state.selectedId = id;
+  if (trackId) state.activeTrackId = trackId;
+  state.voiceSelection = null;
+  state.inspectorRequestedFor = kind + ':' + id;
+  state.inspectorDismissedFor = null;
+  renderTimeline();
+}
+
 function addNewTrack(type) {
   if (!state.take) return;
   const track = type === 'voice' ? makeVoiceTrack() : makeEventTrack();
@@ -3352,11 +3391,27 @@ function renderVoiceClipsInTrack(container, track) {
         <span class="voice-clip-name" data-clip-name="${clip.id}" contenteditable="false" title="Double-clic pour renommer">${escapeHtml(clip.name)}</span>
       </div>
       <canvas data-clip-canvas="${clip.id}"></canvas>
+      <div class="clip-trim-handle left" data-trim="left"></div>
+      <div class="clip-trim-handle right" data-trim="right"></div>
+      <button class="clip-info-btn" data-info="${clip.id}" data-kind="voice" title="Propriétés">⋯</button>
       <button class="voice-clip-del" data-del="${clip.id}" title="Supprimer ce clip">×</button>
     `;
     container.appendChild(el);
     drawClipWaveform(el.querySelector('canvas'), clip, track.color, track.volume ?? 1);
     el.querySelector('.voice-clip-del').addEventListener('click', e => { e.stopPropagation(); removeVoiceClip(clip.id); });
+    // Bouton ⋯ ouvre l'inspecteur (propriétés)
+    const infoBtn = el.querySelector('.clip-info-btn');
+    if (infoBtn) {
+      infoBtn.addEventListener('click', e => { e.stopPropagation(); openInspectorFor('voice', clip.id, track.id); });
+      infoBtn.addEventListener('mousedown', e => e.stopPropagation()); // évite drag intempestif
+    }
+    // Double-clic sur le corps du clip (zone forme d'onde) ouvre aussi l'inspecteur
+    el.addEventListener('dblclick', e => {
+      // Ignorer les double-clics sur le nom (qui sert au renommage), les boutons ou les trim handles
+      if (e.target.closest('.voice-clip-name') || e.target.closest('button') || e.target.closest('.clip-trim-handle')) return;
+      e.stopPropagation();
+      openInspectorFor('voice', clip.id, track.id);
+    });
     // Double-clic sur le nom : passer en édition
     const nameEl = el.querySelector(`[data-clip-name="${clip.id}"]`);
     if (nameEl) {
@@ -3391,6 +3446,7 @@ function renderVoiceClipsInTrack(container, track) {
       });
     }
     setupVoiceClipInteraction(el, clip, track);
+    setupVoiceClipTrim(el, clip, track);
   });
 }
 
@@ -3589,9 +3645,11 @@ function setupVoiceClipInteraction(el, clip, track) {
   // ===== CORPS DU CLIP = sélection de zone =====
   let sel = null;
   function onBodyDown(e) {
-    if (e.target.dataset.del || e.target.dataset.handle) return;
+    if (e.target.dataset.del || e.target.dataset.handle || e.target.dataset.trim || e.target.dataset.info) return;
     // Ignorer aussi tous les clics à l'intérieur de la barre laiton (handle + nom du clip)
     if (e.target.closest('.voice-clip-handle')) return;
+    // Ignorer les handles de rognage et boutons info
+    if (e.target.closest('.clip-trim-handle') || e.target.closest('.clip-info-btn')) return;
     if (e.button !== undefined && e.button !== 0) return;
     e.preventDefault();
     // Ctrl+clic (ou Cmd+clic) sur le corps : ouvrir l'inspecteur, ne pas démarrer une sélection
@@ -3759,6 +3817,7 @@ function renderEventsInTrack(container, track) {
       ${overlays}
       <div class="event-trim-handle left" data-trim="left"></div>
       <div class="event-trim-handle right" data-trim="right"></div>
+      <button class="clip-info-btn" data-info="${ev.id}" data-kind="event" style="z-index:13" title="Propriétés">⋯</button>
       <button class="event-block-del" data-del="${ev.id}" style="z-index:13">×</button>
     `;
     container.appendChild(block);
@@ -3782,6 +3841,18 @@ function renderEventsInTrack(container, track) {
       renderTimeline();
     });
     block.querySelector('.event-block-del').addEventListener('click', e => { e.stopPropagation(); deleteEvent(ev.id); });
+    // Bouton ⋯ ouvre l'inspecteur
+    const infoBtn = block.querySelector('.clip-info-btn');
+    if (infoBtn) {
+      infoBtn.addEventListener('click', e => { e.stopPropagation(); openInspectorFor('event', ev.id, track.id); });
+      infoBtn.addEventListener('mousedown', e => e.stopPropagation());
+    }
+    // Double-clic sur le bruitage ouvre l'inspecteur
+    block.addEventListener('dblclick', e => {
+      if (e.target.closest('button') || e.target.dataset.trim) return;
+      e.stopPropagation();
+      openInspectorFor('event', ev.id, track.id);
+    });
     makeEventDraggable(block, ev, track);
     setupEventTrim(block, ev);
   });
@@ -3836,6 +3907,66 @@ function drawEventWaveform(canvas, ev, trackVol) {
 
 // Rognage des events : drag sur la poignée gauche modifie sourceStart, droite modifie sourceEnd.
 // Le bloc se redimensionne en gardant la position absolue du début (gauche) ou de la fin (droite).
+// Rognage des clips voix (poignées gauche/droite) — similaire à setupEventTrim
+function setupVoiceClipTrim(el, clip, track) {
+  const leftH = el.querySelector('.clip-trim-handle.left');
+  const rightH = el.querySelector('.clip-trim-handle.right');
+  if (!leftH || !rightH) return;
+  const buf = getClipBuffer(clip);
+  const fullDur = buf ? buf.duration : (clip.sourceEnd - clip.sourceStart);
+
+  function setupHandle(handle, side) {
+    let startX, origStart, origEnd, origTime;
+    function onDown(e) {
+      if (e.button !== undefined && e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      startX = e.clientX;
+      origStart = clip.sourceStart;
+      origEnd = clip.sourceEnd;
+      origTime = clip.time;
+      handle.classList.add('active');
+      state.selectedKind = 'voice';
+      state.selectedId = clip.id;
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    }
+    function onMove(e) {
+      const dx = e.clientX - startX;
+      const dt = dx / state.zoomPxPerSec;
+      const minLen = 0.05;
+      if (side === 'left') {
+        // Rognage du début : sourceStart bouge, time bouge aussi pour garder la fin en place
+        let newStart = Math.max(0, Math.min(origEnd - minLen, origStart + dt));
+        clip.sourceStart = newStart;
+        clip.time = Math.max(0, origTime + (newStart - origStart));
+      } else {
+        // Rognage de la fin : sourceEnd bouge
+        let newEnd = Math.min(fullDur, Math.max(origStart + minLen, origEnd + dt));
+        clip.sourceEnd = newEnd;
+      }
+      // Mettre à jour visuellement
+      const dur = clip.sourceEnd - clip.sourceStart;
+      el.style.left = (clip.time * state.zoomPxPerSec) + 'px';
+      el.style.width = Math.max(20, dur * state.zoomPxPerSec) + 'px';
+      const canvas = el.querySelector('canvas');
+      if (canvas) drawClipWaveform(canvas, clip, track.color, track.volume ?? 1);
+      recomputeDuration();
+    }
+    function onUp() {
+      handle.classList.remove('active');
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      const trimmed = (origStart !== clip.sourceStart) || (origEnd !== clip.sourceEnd);
+      if (trimmed) pushHistory();
+      renderTimeline();
+    }
+    handle.addEventListener('mousedown', onDown);
+  }
+  setupHandle(leftH, 'left');
+  setupHandle(rightH, 'right');
+}
+
 function setupEventTrim(block, ev) {
   const leftH = block.querySelector('.event-trim-handle.left');
   const rightH = block.querySelector('.event-trim-handle.right');
