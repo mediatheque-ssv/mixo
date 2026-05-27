@@ -5254,42 +5254,60 @@ function createVoiceCompressor(ctx) {
 // 2. Boost léger à 3 kHz : ajoute de la clarté, intelligibilité des consonnes
 // Retourne { input, output } pour brancher en série dans la chaîne audio.
 function createVoiceEQ(ctx) {
-  // Passe-haut à 100 Hz : coupe le rumble (clim, vibrations, micro qui touche la table)
-  // sans amincir les voix masculines normales (110-150 Hz et plus)
+  // EQ calibré pour Blue Yeti + 4 personnes proches + bureau de médiathèque
+  // (analyse spectrale du podcast d'avril 2026 : excès massif 150-500 Hz, manque 2.5-12 kHz)
+
+  // Passe-haut à 120 Hz : coupe la proximité excessive sans toucher les fondamentales des voix
   const hp = ctx.createBiquadFilter();
   hp.type = 'highpass';
-  hp.frequency.value = 100;
+  hp.frequency.value = 120;
   hp.Q.value = 0.707;
 
-  // Atténuation à 300 Hz : zone des résonances de pièce ("boîte de conserve", "tube")
+  // Anti-grave à 200 Hz : réduit le surplus de graves (+13 à +28 dB constaté)
+  const antiGrave = ctx.createBiquadFilter();
+  antiGrave.type = 'peaking';
+  antiGrave.frequency.value = 200;
+  antiGrave.Q.value = 1.0;
+  antiGrave.gain.value = -4;
+
+  // Anti-bocal à 400 Hz : pic de résonance de la pièce (+12 à +25 dB constaté)
   const antiBocal = ctx.createBiquadFilter();
   antiBocal.type = 'peaking';
-  antiBocal.frequency.value = 300;
+  antiBocal.frequency.value = 400;
   antiBocal.Q.value = 1.0;
-  antiBocal.gain.value = -5;
+  antiBocal.gain.value = -7;
 
-  // Atténuation à 800 Hz : zone "naseau" qui rend la voix nasale/étriquée
+  // Anti-épais à 700 Hz : bas-médium en surplus, voix "encombrée"
+  const antiEpais = ctx.createBiquadFilter();
+  antiEpais.type = 'peaking';
+  antiEpais.frequency.value = 700;
+  antiEpais.Q.value = 1.2;
+  antiEpais.gain.value = -3;
+
+  // Léger anti-nasal à 1000 Hz
   const antiNasal = ctx.createBiquadFilter();
   antiNasal.type = 'peaking';
-  antiNasal.frequency.value = 800;
+  antiNasal.frequency.value = 1000;
   antiNasal.Q.value = 1.5;
-  antiNasal.gain.value = -3;
+  antiNasal.gain.value = -2;
 
-  // Boost de présence/articulation à 5 kHz : les consonnes se détachent, voix qui "respire"
+  // Boost de présence à 4 kHz : articulation, les consonnes ressortent
   const presence = ctx.createBiquadFilter();
   presence.type = 'peaking';
-  presence.frequency.value = 5000;
+  presence.frequency.value = 4000;
   presence.Q.value = 0.9;
-  presence.gain.value = 5;
+  presence.gain.value = 6;
 
-  // Léger boost "air" à 12 kHz : ajoute de la respiration / brillance
+  // Air à 10 kHz : restaurer la brillance/respiration qui manque cruellement
   const air = ctx.createBiquadFilter();
   air.type = 'highshelf';
   air.frequency.value = 10000;
-  air.gain.value = 3;
+  air.gain.value = 6;
 
-  hp.connect(antiBocal);
-  antiBocal.connect(antiNasal);
+  hp.connect(antiGrave);
+  antiGrave.connect(antiBocal);
+  antiBocal.connect(antiEpais);
+  antiEpais.connect(antiNasal);
   antiNasal.connect(presence);
   presence.connect(air);
   return { input: hp, output: air };
@@ -5368,16 +5386,22 @@ async function computeTrackRMSWithCompression(track) {
   }
   if (track.eq) {
     const hp = offlineCtx.createBiquadFilter();
-    hp.type = 'highpass'; hp.frequency.value = 100; hp.Q.value = 0.707;
+    hp.type = 'highpass'; hp.frequency.value = 120; hp.Q.value = 0.707;
+    const antiGrave = offlineCtx.createBiquadFilter();
+    antiGrave.type = 'peaking'; antiGrave.frequency.value = 200; antiGrave.Q.value = 1.0; antiGrave.gain.value = -4;
     const antiBocal = offlineCtx.createBiquadFilter();
-    antiBocal.type = 'peaking'; antiBocal.frequency.value = 300; antiBocal.Q.value = 1.0; antiBocal.gain.value = -5;
+    antiBocal.type = 'peaking'; antiBocal.frequency.value = 400; antiBocal.Q.value = 1.0; antiBocal.gain.value = -7;
+    const antiEpais = offlineCtx.createBiquadFilter();
+    antiEpais.type = 'peaking'; antiEpais.frequency.value = 700; antiEpais.Q.value = 1.2; antiEpais.gain.value = -3;
     const antiNasal = offlineCtx.createBiquadFilter();
-    antiNasal.type = 'peaking'; antiNasal.frequency.value = 800; antiNasal.Q.value = 1.5; antiNasal.gain.value = -3;
+    antiNasal.type = 'peaking'; antiNasal.frequency.value = 1000; antiNasal.Q.value = 1.5; antiNasal.gain.value = -2;
     const presence = offlineCtx.createBiquadFilter();
-    presence.type = 'peaking'; presence.frequency.value = 5000; presence.Q.value = 0.9; presence.gain.value = 5;
+    presence.type = 'peaking'; presence.frequency.value = 4000; presence.Q.value = 0.9; presence.gain.value = 6;
     const air = offlineCtx.createBiquadFilter();
-    air.type = 'highshelf'; air.frequency.value = 10000; air.gain.value = 3;
-    hp.connect(antiBocal); antiBocal.connect(antiNasal); antiNasal.connect(presence); presence.connect(air); air.connect(chainHead);
+    air.type = 'highshelf'; air.frequency.value = 10000; air.gain.value = 6;
+    hp.connect(antiGrave); antiGrave.connect(antiBocal); antiBocal.connect(antiEpais);
+    antiEpais.connect(antiNasal); antiNasal.connect(presence); presence.connect(air);
+    air.connect(chainHead);
     chainHead = hp;
   }
 
@@ -5946,16 +5970,22 @@ async function exportMix() {
       }
       if (track.eq) {
         const hp = offlineCtx.createBiquadFilter();
-        hp.type = 'highpass'; hp.frequency.value = 100; hp.Q.value = 0.707;
+        hp.type = 'highpass'; hp.frequency.value = 120; hp.Q.value = 0.707;
+        const antiGrave = offlineCtx.createBiquadFilter();
+        antiGrave.type = 'peaking'; antiGrave.frequency.value = 200; antiGrave.Q.value = 1.0; antiGrave.gain.value = -4;
         const antiBocal = offlineCtx.createBiquadFilter();
-        antiBocal.type = 'peaking'; antiBocal.frequency.value = 300; antiBocal.Q.value = 1.0; antiBocal.gain.value = -5;
+        antiBocal.type = 'peaking'; antiBocal.frequency.value = 400; antiBocal.Q.value = 1.0; antiBocal.gain.value = -7;
+        const antiEpais = offlineCtx.createBiquadFilter();
+        antiEpais.type = 'peaking'; antiEpais.frequency.value = 700; antiEpais.Q.value = 1.2; antiEpais.gain.value = -3;
         const antiNasal = offlineCtx.createBiquadFilter();
-        antiNasal.type = 'peaking'; antiNasal.frequency.value = 800; antiNasal.Q.value = 1.5; antiNasal.gain.value = -3;
+        antiNasal.type = 'peaking'; antiNasal.frequency.value = 1000; antiNasal.Q.value = 1.5; antiNasal.gain.value = -2;
         const presence = offlineCtx.createBiquadFilter();
-        presence.type = 'peaking'; presence.frequency.value = 5000; presence.Q.value = 0.9; presence.gain.value = 5;
+        presence.type = 'peaking'; presence.frequency.value = 4000; presence.Q.value = 0.9; presence.gain.value = 6;
         const air = offlineCtx.createBiquadFilter();
-        air.type = 'highshelf'; air.frequency.value = 10000; air.gain.value = 3;
-        hp.connect(antiBocal); antiBocal.connect(antiNasal); antiNasal.connect(presence); presence.connect(air); air.connect(trackOut);
+        air.type = 'highshelf'; air.frequency.value = 10000; air.gain.value = 6;
+        hp.connect(antiGrave); antiGrave.connect(antiBocal); antiBocal.connect(antiEpais);
+        antiEpais.connect(antiNasal); antiNasal.connect(presence); presence.connect(air);
+        air.connect(trackOut);
         trackOut = hp;
       }
 
