@@ -864,36 +864,38 @@
   .track-move-btn:disabled { opacity: 0.3; cursor: not-allowed; }
   .track-moves { display: flex; flex-direction: column; gap: 1px; }
 
-  /* Bouton + pour ajouter une piste, en bas de la liste */
+  /* Lien "+ Ajouter une piste" discret sous la dernière piste */
   .track-add-row {
     position: relative;
-    width: 150px; /* même largeur que track-head */
-    padding: 6px 8px;
+    padding: 8px 14px 4px;
     background: transparent;
     display: flex; align-items: center;
   }
   .track-add-btn {
-    width: 28px; height: 28px;
-    border-radius: 50% !important;
-    padding: 0 !important;
-    font-size: 18px;
+    padding: 4px 10px !important;
+    font-size: 11px !important;
     line-height: 1;
-    display: flex; align-items: center; justify-content: center;
     background: transparent !important;
     box-shadow: none !important;
     text-shadow: none !important;
     color: var(--text-soft) !important;
     border: 1px dashed var(--text-soft) !important;
+    border-radius: 12px !important;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    font-weight: 600 !important;
     transition: all 0.12s;
+    opacity: 0.7;
   }
   .track-add-btn:hover {
     color: var(--brass) !important;
     border-color: var(--brass) !important;
-    background: rgba(212,175,55,0.08) !important;
+    background: rgba(212,175,55,0.06) !important;
+    opacity: 1;
   }
   .track-add-menu {
     position: absolute;
-    left: 44px; top: 0;
+    left: 14px; top: 32px;
     z-index: 20;
     background: linear-gradient(180deg, var(--panel-1) 0%, var(--panel-2) 100%);
     border: 1px solid var(--border);
@@ -3491,11 +3493,11 @@ function renderTracks(w) {
     wrap.appendChild(trackEl);
   });
 
-  // Bouton "+" pour ajouter une nouvelle piste, en bas de la liste, dans la zone des track-heads
+  // Bouton "+ Ajouter une piste" en mini-lien doré pointillé, en bas de la liste des pistes
   const addRow = document.createElement('div');
   addRow.className = 'track-add-row';
   addRow.innerHTML = `
-    <button class="track-add-btn" id="trackAddBtn" title="Ajouter une piste">+</button>
+    <button class="track-add-btn" id="trackAddBtn" title="Ajouter une piste">+ Ajouter une piste</button>
     <div class="track-add-menu" id="trackAddMenu">
       <button data-add="voice">Nouvelle piste voix</button>
       <button data-add="events">Nouvelle piste bruitages</button>
@@ -3515,7 +3517,6 @@ function renderTracks(w) {
       addNewTrack(b.dataset.add);
     });
   });
-  // Ferme le menu si on clique ailleurs
   document.addEventListener('click', () => addMenu.classList.remove('visible'), { once: true });
 }
 
@@ -3747,16 +3748,25 @@ function drawClipWaveform(canvas, clip, color, trackVol) {
   if (!canvas || !buf) return;
   const dur = clip.sourceEnd - clip.sourceStart;
   const widthPx = Math.max(1, dur * state.zoomPxPerSec);
-  const dpr = window.devicePixelRatio || 1;
+  let dpr = window.devicePixelRatio || 1;
   const canvasHeight = VOICE_TRACK_HEIGHT - 18;
+  // Les navigateurs limitent les canvas à ~16384 px par dimension. Au-delà, le canvas devient
+  // invalide ou rendu en blanc. On plafonne la largeur interne en réduisant le DPR si besoin.
+  const MAX_CANVAS_DIM = 16000;
+  if (widthPx * dpr > MAX_CANVAS_DIM) {
+    dpr = MAX_CANVAS_DIM / widthPx;
+    if (dpr < 1) dpr = 1; // si même à dpr=1 on est au-dessus, on accepte un canvas un peu pixelisé
+  }
+  const internalW = Math.min(MAX_CANVAS_DIM, Math.floor(widthPx * dpr));
   canvas.style.width = widthPx + 'px';
   canvas.style.height = canvasHeight + 'px';
   canvas.style.marginTop = '18px';
-  canvas.width = widthPx * dpr;
-  canvas.height = canvasHeight * dpr;
+  canvas.width = internalW;
+  canvas.height = Math.floor(canvasHeight * dpr);
   const ctx = canvas.getContext('2d');
   ctx.setTransform(1,0,0,1,0,0);
-  ctx.scale(dpr, dpr);
+  // On scale pour mapper les coords logiques (widthPx × canvasHeight) sur les coords internes
+  ctx.scale(internalW / widthPx, dpr);
   const data = buf.getChannelData(0);
   const sampleStart = Math.floor(clip.sourceStart * buf.sampleRate);
   const sampleEnd = Math.floor(clip.sourceEnd * buf.sampleRate);
@@ -4201,16 +4211,22 @@ function drawEventWaveform(canvas, ev, trackVol) {
   const buf = state.padBuffers.get(ev.padId);
   if (!buf) return;
   const widthPx = Math.max(1, ev.duration * state.zoomPxPerSec);
-  // Hauteur du canvas = hauteur d'un event (110px) - hauteur de la handle (18px) - léger padding
   const heightPx = 92;
-  const dpr = window.devicePixelRatio || 1;
+  let dpr = window.devicePixelRatio || 1;
+  // Plafonner la largeur interne du canvas (limite ~16384 px des navigateurs)
+  const MAX_CANVAS_DIM = 16000;
+  if (widthPx * dpr > MAX_CANVAS_DIM) {
+    dpr = MAX_CANVAS_DIM / widthPx;
+    if (dpr < 1) dpr = 1;
+  }
+  const internalW = Math.min(MAX_CANVAS_DIM, Math.floor(widthPx * dpr));
   canvas.style.width = widthPx + 'px';
   canvas.style.height = heightPx + 'px';
-  canvas.width = widthPx * dpr;
-  canvas.height = heightPx * dpr;
+  canvas.width = internalW;
+  canvas.height = Math.floor(heightPx * dpr);
   const ctx = canvas.getContext('2d');
   ctx.setTransform(1,0,0,1,0,0);
-  ctx.scale(dpr, dpr);
+  ctx.scale(internalW / widthPx, dpr);
   const data = buf.getChannelData(0);
   const sampleStart = Math.floor((ev.sourceStart ?? 0) * buf.sampleRate);
   const sampleEnd = Math.floor((ev.sourceEnd ?? buf.duration) * buf.sampleRate);
