@@ -5188,18 +5188,37 @@ function createVoiceCompressor(ctx) {
 // 2. Boost léger à 3 kHz : ajoute de la clarté, intelligibilité des consonnes
 // Retourne { input, output } pour brancher en série dans la chaîne audio.
 function createVoiceEQ(ctx) {
-  // Passe-haut
+  // Passe-haut à 100 Hz : coupe le rumble (clim, vibrations, micro qui touche la table)
+  // sans amincir les voix masculines normales (110-150 Hz et plus)
   const hp = ctx.createBiquadFilter();
   hp.type = 'highpass';
-  hp.frequency.value = 80;
+  hp.frequency.value = 100;
   hp.Q.value = 0.707;
-  // Boost médium-haut (présence/clarté)
+
+  // Atténuation à 350 Hz : la zone des résonances de pièce ("boîte de conserve", "tube")
+  const antiBocal = ctx.createBiquadFilter();
+  antiBocal.type = 'peaking';
+  antiBocal.frequency.value = 350;
+  antiBocal.Q.value = 1.2;
+  antiBocal.gain.value = -3;
+
+  // Atténuation légère à 800 Hz : zone "naseau" qui rend la voix nasale/étriquée
+  const antiNasal = ctx.createBiquadFilter();
+  antiNasal.type = 'peaking';
+  antiNasal.frequency.value = 800;
+  antiNasal.Q.value = 1.5;
+  antiNasal.gain.value = -2;
+
+  // Boost de présence/articulation à 5 kHz : les consonnes se détachent, voix qui "respire"
   const presence = ctx.createBiquadFilter();
   presence.type = 'peaking';
-  presence.frequency.value = 3000;
+  presence.frequency.value = 5000;
   presence.Q.value = 1.0;
-  presence.gain.value = 3; // +3 dB léger
-  hp.connect(presence);
+  presence.gain.value = 3;
+
+  hp.connect(antiBocal);
+  antiBocal.connect(antiNasal);
+  antiNasal.connect(presence);
   return { input: hp, output: presence };
 }
 
