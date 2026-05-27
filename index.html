@@ -1274,6 +1274,25 @@
     border: 1px solid var(--border-soft);
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 1px 0 rgba(0,0,0,0.4);
   }
+  /* Sections d'aide : grille 2 colonnes (commande | description) */
+  .help-section-title {
+    margin-top: 14px;
+    margin-bottom: 8px;
+    color: var(--brass);
+    font-size: 13px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .help-section {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 8px 16px;
+    font-size: 13px;
+    color: var(--text);
+    align-items: baseline;
+  }
+  .help-cmd { white-space: nowrap; }
+  .help-desc { color: var(--text-soft); }
 
   /* === MODE PRÉSENTATEUR === */
   body.presenter-mode {
@@ -1678,42 +1697,64 @@
   <div class="modal" style="max-width: 640px">
     <h3>Raccourcis et workflow</h3>
 
-    <h4 style="margin-top: 14px; color: var(--brass); font-size: 13px; letter-spacing: 1px; text-transform: uppercase;">Transport et lecture</h4>
-    <div style="font-size: 13px; line-height: 1.8; color: var(--text);">
-      <div><kbd>Espace</kbd> &nbsp; Enregistrer / Pause (ou Lecture / Pause dans l'éditeur)</div>
-      <div><kbd>Échap</kbd> &nbsp; Stop, ou annuler la sélection</div>
-      <div><kbd>F11</kbd> &nbsp; Mode présentateur plein écran</div>
+    <h4 class="help-section-title">Transport et lecture</h4>
+    <div class="help-section">
+      <div class="help-cmd"><kbd>Espace</kbd></div>
+      <div class="help-desc">Enregistrer / Pause (ou Lecture / Pause dans l'éditeur)</div>
+      <div class="help-cmd"><kbd>Échap</kbd></div>
+      <div class="help-desc">Stop, ou annuler la sélection</div>
+      <div class="help-cmd"><kbd>F11</kbd></div>
+      <div class="help-desc">Mode présentateur plein écran</div>
     </div>
 
-    <h4 style="margin-top: 14px; color: var(--brass); font-size: 13px; letter-spacing: 1px; text-transform: uppercase;">Pads</h4>
-    <div style="font-size: 13px; line-height: 1.8; color: var(--text);">
-      <div><kbd>1</kbd>–<kbd>9</kbd>, <kbd>0</kbd> &nbsp; Déclencher les 10 premiers pads</div>
-      <div><kbd>Ctrl+clic</kbd> sur un pad &nbsp; Ajouter au playhead dans la piste bruitages active</div>
-      <div><kbd>Ctrl+1</kbd>…<kbd>Ctrl+9</kbd> &nbsp; Déclencher + ajouter à la timeline</div>
-      <div>Étoile sur un pad &nbsp; Ajouter aux favoris (banque virtuelle "★ Favoris")</div>
+    <h4 class="help-section-title">Pads</h4>
+    <div class="help-section">
+      <div class="help-cmd"><kbd>1</kbd>–<kbd>9</kbd>, <kbd>0</kbd></div>
+      <div class="help-desc">Déclencher les 10 premiers pads</div>
+      <div class="help-cmd"><kbd>Ctrl+clic</kbd> sur un pad</div>
+      <div class="help-desc">Ajouter au playhead dans la piste bruitages active</div>
+      <div class="help-cmd"><kbd>Ctrl+1</kbd>…<kbd>Ctrl+9</kbd></div>
+      <div class="help-desc">Déclencher + ajouter à la timeline</div>
+      <div class="help-cmd">Étoile sur un pad</div>
+      <div class="help-desc">Ajouter aux favoris (banque virtuelle "★ Favoris")</div>
     </div>
 
-    <h4 style="margin-top: 14px; color: var(--brass); font-size: 13px; letter-spacing: 1px; text-transform: uppercase;">Édition</h4>
-    <div style="font-size: 13px; line-height: 1.8; color: var(--text);">
-      <div><kbd>S</kbd> &nbsp; Scinder le clip voix au curseur (ou aux bornes d'une sélection)</div>
-      <div><kbd>M</kbd> &nbsp; Silencer la sélection</div>
-      <div><kbd>Suppr</kbd> &nbsp; Supprimer la sélection (la suite s'aimante pour combler le trou)</div>
-      <div><kbd>Ctrl+C</kbd> / <kbd>Ctrl+X</kbd> / <kbd>Ctrl+V</kbd> &nbsp; Copier / Couper / Coller (presse-papier interne)</div>
-      <div><kbd>Ctrl+Maj+C</kbd> / <kbd>Ctrl+Maj+X</kbd> &nbsp; Copier-pader / Couper-pader (zone vers un nouveau pad)</div>
-      <div><kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd> &nbsp; Annuler / Rétablir</div>
-      <div><kbd>Ctrl+S</kbd> &nbsp; Sauvegarder le projet</div>
+    <h4 class="help-section-title">Édition</h4>
+    <div class="help-section">
+      <div class="help-cmd"><kbd>S</kbd></div>
+      <div class="help-desc">Scinder le clip voix au curseur (ou aux bornes d'une sélection)</div>
+      <div class="help-cmd"><kbd>M</kbd></div>
+      <div class="help-desc">Silencer la sélection</div>
+      <div class="help-cmd"><kbd>Suppr</kbd></div>
+      <div class="help-desc">Supprimer la sélection (la suite s'aimante pour combler le trou)</div>
+      <div class="help-cmd"><kbd>Ctrl+C</kbd> / <kbd>Ctrl+X</kbd> / <kbd>Ctrl+V</kbd></div>
+      <div class="help-desc">Copier / Couper / Coller (presse-papier interne)</div>
+      <div class="help-cmd"><kbd>Ctrl+Maj+C</kbd> / <kbd>Ctrl+Maj+X</kbd></div>
+      <div class="help-desc">Copier-pader / Couper-pader (zone vers un nouveau pad)</div>
+      <div class="help-cmd"><kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd></div>
+      <div class="help-desc">Annuler / Rétablir</div>
+      <div class="help-cmd"><kbd>Ctrl+S</kbd></div>
+      <div class="help-desc">Sauvegarder le projet</div>
     </div>
 
-    <h4 style="margin-top: 14px; color: var(--brass); font-size: 13px; letter-spacing: 1px; text-transform: uppercase;">Gestes timeline</h4>
-    <div style="font-size: 13px; line-height: 1.8; color: var(--text);">
-      <div><strong>Glisser la barre laiton</strong> d'un clip voix &nbsp; Déplacer le clip</div>
-      <div><strong>Ctrl+glisser</strong> un clip voix &nbsp; Déplace aussi les bruitages liés (= pistes de même couleur)</div>
-      <div><strong>Glisser les bords</strong> d'un clip ou bruitage &nbsp; Rogner le début / la fin</div>
-      <div><strong>Cliquer-glisser sur le corps</strong> d'un clip voix &nbsp; Sélectionner une zone</div>
-      <div><strong>Double-clic</strong> sur un clip ou bruitage &nbsp; Ouvrir le panneau de propriétés</div>
-      <div><strong>Bouton ⋯</strong> sur un clip ou bruitage &nbsp; Idem (propriétés)</div>
-      <div><strong>Double-clic</strong> sur le nom (barre laiton) &nbsp; Renommer le clip</div>
-      <div><strong>Clic sur le rond coloré</strong> d'une piste &nbsp; Changer la couleur — pistes de même couleur = liées</div>
+    <h4 class="help-section-title">Gestes timeline</h4>
+    <div class="help-section">
+      <div class="help-cmd"><strong>Glisser la barre laiton</strong> d'un clip voix</div>
+      <div class="help-desc">Déplacer le clip</div>
+      <div class="help-cmd"><strong>Ctrl+glisser</strong> un clip voix</div>
+      <div class="help-desc">Déplace aussi les bruitages liés (= pistes de même couleur)</div>
+      <div class="help-cmd"><strong>Glisser les bords</strong> d'un clip ou bruitage</div>
+      <div class="help-desc">Rogner le début / la fin</div>
+      <div class="help-cmd"><strong>Cliquer-glisser sur le corps</strong> d'un clip voix</div>
+      <div class="help-desc">Sélectionner une zone</div>
+      <div class="help-cmd"><strong>Double-clic</strong> sur un clip ou bruitage</div>
+      <div class="help-desc">Ouvrir le panneau de propriétés</div>
+      <div class="help-cmd"><strong>Bouton ⋯</strong> sur un clip ou bruitage</div>
+      <div class="help-desc">Idem (propriétés)</div>
+      <div class="help-cmd"><strong>Double-clic</strong> sur le nom (barre laiton)</div>
+      <div class="help-desc">Renommer le clip</div>
+      <div class="help-cmd"><strong>Clic sur le rond coloré</strong> d'une piste</div>
+      <div class="help-desc">Changer la couleur — pistes de même couleur = liées</div>
     </div>
 
     <h3 style="margin-top: 22px; font-size: 16px">Workflow</h3>
@@ -2453,9 +2494,9 @@ function playMixForOverdub() {
     let trackOut = masterLim;
     if (track.compressed) {
       const comp = createVoiceCompressor(ctx);
-      comp.connect(trackOut);
-      trackOut = comp;
-      state.playback.sources.push(comp);
+      comp.output.connect(trackOut);
+      trackOut = comp.input;
+      state.playback.sources.push(comp.input, comp.output);
     }
     if (track.eq) {
       const eq = createVoiceEQ(ctx);
@@ -3446,12 +3487,14 @@ function renderTracks(w) {
     head.querySelector(`[data-mute="${track.id}"]`).addEventListener('click', e => {
       e.stopPropagation();
       track.muted = !track.muted;
+      updateLiveTrackGains();
       pushHistory();
       renderTimeline();
     });
     head.querySelector(`[data-solo="${track.id}"]`).addEventListener('click', e => {
       e.stopPropagation();
       track.solo = !track.solo;
+      updateLiveTrackGains();
       pushHistory();
       renderTimeline();
     });
@@ -4691,6 +4734,18 @@ function timelineBackgroundClick(e) {
 }
 document.getElementById('timelineContainer').addEventListener('click', timelineBackgroundClick);
 
+// Met à jour les gains des pistes en cours de lecture pour appliquer mute/solo en direct
+function updateLiveTrackGains() {
+  if (!state.playback.active || !state.playback.trackGains || !state.take) return;
+  const anySolo = state.take.tracks.some(t => t.solo);
+  for (const track of state.take.tracks) {
+    const g = state.playback.trackGains.get(track.id);
+    if (!g) continue;
+    const audible = track.muted ? false : (anySolo ? !!track.solo : true);
+    g.gain.setTargetAtTime(audible ? 1 : 0, state.audioCtx.currentTime, 0.01);
+  }
+}
+
 function setPlayheadTime(t) {
   const ph = document.getElementById('playhead');
   ph.classList.add('visible');
@@ -4698,11 +4753,16 @@ function setPlayheadTime(t) {
   const wasPlaying = state.playback.active;
   state.playback.startAtTime = t;
   updateMixDurationDisplay();
-  // Si la lecture était en cours, on la relance depuis la nouvelle position
   if (wasPlaying) {
-    stopMixPlayback();
-    state.playback.startAtTime = t; // stopMixPlayback restaure lastPlayedFrom, on réécrase
-    playMix();
+    // On veut juste arrêter les sources et relancer depuis la nouvelle position,
+    // SANS passer par stopMixPlayback() qui rappellerait setPlayheadTime(lastPlayedFrom).
+    state.playback.sources.forEach(s => { try { s.stop(); } catch(e){} });
+    state.playback.sources = [];
+    state.playback.active = false;
+    if (state.playback.rafId) cancelAnimationFrame(state.playback.rafId);
+    // Repart depuis t (lastPlayedFrom n'est PAS modifié : Stop reviendra toujours au point initial)
+    state.playback.startAtTime = t;
+    playMix({ keepLastPlayedFrom: true });
   }
 }
 
@@ -5174,13 +5234,19 @@ function createLimiter(ctx) {
 
 // Crée un compresseur "voix" (broadcast standard)
 function createVoiceCompressor(ctx) {
+  // Compresseur plus marqué pour bien aplatir la dynamique de la voix
   const c = ctx.createDynamicsCompressor();
-  c.threshold.value = -22;
-  c.knee.value = 6;
-  c.ratio.value = 4;
+  c.threshold.value = -20;
+  c.knee.value = 8;
+  c.ratio.value = 5;
   c.attack.value = 0.003;
-  c.release.value = 0.25;
-  return c;
+  c.release.value = 0.18;
+  // Makeup gain en sortie : compense la baisse de volume due à la compression
+  const makeup = ctx.createGain();
+  makeup.gain.value = 1.6; // ~+4 dB
+  c.connect(makeup);
+  // On retourne un objet input/output pour pouvoir brancher
+  return { input: c, output: makeup, connect: function(dest) { makeup.connect(dest); return dest; } };
 }
 
 // EQ "voix" : chaîne de filtres typique broadcast.
@@ -5195,31 +5261,38 @@ function createVoiceEQ(ctx) {
   hp.frequency.value = 100;
   hp.Q.value = 0.707;
 
-  // Atténuation à 350 Hz : la zone des résonances de pièce ("boîte de conserve", "tube")
+  // Atténuation à 300 Hz : zone des résonances de pièce ("boîte de conserve", "tube")
   const antiBocal = ctx.createBiquadFilter();
   antiBocal.type = 'peaking';
-  antiBocal.frequency.value = 350;
-  antiBocal.Q.value = 1.2;
-  antiBocal.gain.value = -3;
+  antiBocal.frequency.value = 300;
+  antiBocal.Q.value = 1.0;
+  antiBocal.gain.value = -5;
 
-  // Atténuation légère à 800 Hz : zone "naseau" qui rend la voix nasale/étriquée
+  // Atténuation à 800 Hz : zone "naseau" qui rend la voix nasale/étriquée
   const antiNasal = ctx.createBiquadFilter();
   antiNasal.type = 'peaking';
   antiNasal.frequency.value = 800;
   antiNasal.Q.value = 1.5;
-  antiNasal.gain.value = -2;
+  antiNasal.gain.value = -3;
 
   // Boost de présence/articulation à 5 kHz : les consonnes se détachent, voix qui "respire"
   const presence = ctx.createBiquadFilter();
   presence.type = 'peaking';
   presence.frequency.value = 5000;
-  presence.Q.value = 1.0;
-  presence.gain.value = 3;
+  presence.Q.value = 0.9;
+  presence.gain.value = 5;
+
+  // Léger boost "air" à 12 kHz : ajoute de la respiration / brillance
+  const air = ctx.createBiquadFilter();
+  air.type = 'highshelf';
+  air.frequency.value = 10000;
+  air.gain.value = 3;
 
   hp.connect(antiBocal);
   antiBocal.connect(antiNasal);
   antiNasal.connect(presence);
-  return { input: hp, output: presence };
+  presence.connect(air);
+  return { input: hp, output: air };
 }
 
 // Calcule le RMS global d'une piste (moyenne pondérée des RMS des clips/events)
@@ -5284,17 +5357,27 @@ async function computeTrackRMSWithCompression(track) {
   let chainHead = offlineCtx.destination;
   if (track.compressed) {
     const comp = offlineCtx.createDynamicsCompressor();
-    comp.threshold.value = -22; comp.knee.value = 6; comp.ratio.value = 4;
-    comp.attack.value = 0.003; comp.release.value = 0.25;
-    comp.connect(chainHead);
+    comp.threshold.value = -20; comp.knee.value = 8; comp.ratio.value = 5;
+    comp.attack.value = 0.003; comp.release.value = 0.18;
+    // Makeup gain pour compenser la baisse de volume due à la compression
+    const makeup = offlineCtx.createGain();
+    makeup.gain.value = 1.6;
+    comp.connect(makeup);
+    makeup.connect(chainHead);
     chainHead = comp;
   }
   if (track.eq) {
     const hp = offlineCtx.createBiquadFilter();
-    hp.type = 'highpass'; hp.frequency.value = 80; hp.Q.value = 0.707;
+    hp.type = 'highpass'; hp.frequency.value = 100; hp.Q.value = 0.707;
+    const antiBocal = offlineCtx.createBiquadFilter();
+    antiBocal.type = 'peaking'; antiBocal.frequency.value = 300; antiBocal.Q.value = 1.0; antiBocal.gain.value = -5;
+    const antiNasal = offlineCtx.createBiquadFilter();
+    antiNasal.type = 'peaking'; antiNasal.frequency.value = 800; antiNasal.Q.value = 1.5; antiNasal.gain.value = -3;
     const presence = offlineCtx.createBiquadFilter();
-    presence.type = 'peaking'; presence.frequency.value = 3000; presence.Q.value = 1.0; presence.gain.value = 3;
-    hp.connect(presence); presence.connect(chainHead);
+    presence.type = 'peaking'; presence.frequency.value = 5000; presence.Q.value = 0.9; presence.gain.value = 5;
+    const air = offlineCtx.createBiquadFilter();
+    air.type = 'highshelf'; air.frequency.value = 10000; air.gain.value = 3;
+    hp.connect(antiBocal); antiBocal.connect(antiNasal); antiNasal.connect(presence); presence.connect(air); air.connect(chainHead);
     chainHead = hp;
   }
 
@@ -5565,13 +5648,16 @@ function normalizeClipOrEvent(id, kind) {
 }
 
 // ===================== Lecture preview =====================
-function playMix() {
+function playMix(opts = {}) {
   if (!state.take || state.playback.active) return;
   state.playback.active = true;
   state.playback.startCtxTime = state.audioCtx.currentTime;
   const startAt = state.playback.startAtTime || 0;
   // Mémoriser le point de départ pour pouvoir y revenir au Stop (comportement Audacity)
-  state.playback.lastPlayedFrom = startAt;
+  // Sauf si on est dans un "scrub" pendant lecture (déplacement du playhead) : on garde le point initial.
+  if (!opts.keepLastPlayedFrom) {
+    state.playback.lastPlayedFrom = startAt;
+  }
   // Mettre le timer en mode "live" (rouge vif)
   document.getElementById('editorTimer').classList.add('live');
 
@@ -5581,23 +5667,37 @@ function playMix() {
   masterLim.connect(ctx.destination);
   state.playback.masterLimiter = masterLim;
 
+  // Map trackId → GainNode pour pouvoir muter/désolo dynamiquement pendant la lecture
+  state.playback.trackGains = new Map();
+
+  // Identifier les pistes solo : si au moins une piste est solo, seules celles-là sont audibles
+  const anySolo = state.take.tracks.some(t => t.solo);
+
   for (const track of state.take.tracks) {
-    if (!trackIsAudible(track)) continue;
     const trackVol = track.volume ?? 1;
-    // Préparer le nœud de sortie de cette piste : EQ → compresseur → master (les étapes activées seulement)
-    let trackOut = masterLim;
+    // Préparer le nœud de sortie de cette piste : trackGain → EQ → compresseur → master
+    // Le trackGain contrôle l'audibilité dynamique (mute/solo) sans devoir rerouter
+    const trackGain = ctx.createGain();
+    const audible = track.muted ? false : (anySolo ? !!track.solo : true);
+    trackGain.gain.value = audible ? 1 : 0;
+    state.playback.trackGains.set(track.id, trackGain);
+
+    let chainTail = masterLim;
     if (track.compressed) {
       const comp = createVoiceCompressor(ctx);
-      comp.connect(trackOut);
-      trackOut = comp;
-      state.playback.sources.push(comp);
+      comp.output.connect(chainTail);
+      chainTail = comp.input;
+      state.playback.sources.push(comp.input, comp.output);
     }
     if (track.eq) {
       const eq = createVoiceEQ(ctx);
-      eq.output.connect(trackOut);
-      trackOut = eq.input;
+      eq.output.connect(chainTail);
+      chainTail = eq.input;
       state.playback.sources.push(eq.input, eq.output);
     }
+    trackGain.connect(chainTail);
+    state.playback.sources.push(trackGain);
+    const trackOut = trackGain;
 
     if (track.type === 'voice') {
       for (const clip of track.clips) {
@@ -5705,6 +5805,27 @@ function stopMixPlayback() {
   updateMixDurationDisplay();
 }
 
+// Pause : arrête les sources mais garde la position courante (la lecture reprendra de là)
+function pauseMixPlayback() {
+  if (!state.playback.active) return;
+  // Calculer la position courante AVANT de cancel le RAF
+  const elapsed = state.audioCtx.currentTime - state.playback.startCtxTime;
+  const currentT = state.playback.startAtTime + elapsed;
+  state.playback.sources.forEach(s => { try { s.stop(); } catch(e){} });
+  state.playback.sources = [];
+  state.playback.active = false;
+  if (state.playback.rafId) cancelAnimationFrame(state.playback.rafId);
+  document.getElementById('btnPlayMix').innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 20,12 6,20"/></svg>Lecture';
+  document.getElementById('editorTimer').classList.remove('live');
+  // Le playhead reste sur place : la lecture reprendra d'ici
+  state.playback.startAtTime = Math.max(0, Math.min(state.take.duration, currentT));
+  const ph = document.getElementById('playhead');
+  ph.style.left = (TRACK_HEAD_W + state.playback.startAtTime * state.zoomPxPerSec) + 'px';
+  updateMixDurationDisplay();
+  // Stop reste actif tant qu'on a une position non nulle ou qu'on est en pause
+  document.getElementById('btnStopMix').disabled = false;
+}
+
 function animatePlayhead() {
   const ph = document.getElementById('playhead');
   const container = document.getElementById('timelineContainer');
@@ -5731,7 +5852,7 @@ function animatePlayhead() {
 }
 
 document.getElementById('btnPlayMix').addEventListener('click', () => {
-  if (state.playback.active) stopMixPlayback(); else playMix();
+  if (state.playback.active) pauseMixPlayback(); else playMix();
 });
 document.getElementById('btnStopMix').addEventListener('click', () => {
   stopMixPlayback();
@@ -5817,17 +5938,26 @@ async function exportMix() {
       let trackOut = masterLim;
       if (track.compressed) {
         const comp = offlineCtx.createDynamicsCompressor();
-        comp.threshold.value = -22; comp.knee.value = 6; comp.ratio.value = 4;
-        comp.attack.value = 0.003; comp.release.value = 0.25;
-        comp.connect(trackOut);
+        comp.threshold.value = -20; comp.knee.value = 8; comp.ratio.value = 5;
+        comp.attack.value = 0.003; comp.release.value = 0.18;
+        const makeup = offlineCtx.createGain();
+        makeup.gain.value = 1.6;
+        comp.connect(makeup);
+        makeup.connect(trackOut);
         trackOut = comp;
       }
       if (track.eq) {
         const hp = offlineCtx.createBiquadFilter();
-        hp.type = 'highpass'; hp.frequency.value = 80; hp.Q.value = 0.707;
+        hp.type = 'highpass'; hp.frequency.value = 100; hp.Q.value = 0.707;
+        const antiBocal = offlineCtx.createBiquadFilter();
+        antiBocal.type = 'peaking'; antiBocal.frequency.value = 300; antiBocal.Q.value = 1.0; antiBocal.gain.value = -5;
+        const antiNasal = offlineCtx.createBiquadFilter();
+        antiNasal.type = 'peaking'; antiNasal.frequency.value = 800; antiNasal.Q.value = 1.5; antiNasal.gain.value = -3;
         const presence = offlineCtx.createBiquadFilter();
-        presence.type = 'peaking'; presence.frequency.value = 3000; presence.Q.value = 1.0; presence.gain.value = 3;
-        hp.connect(presence); presence.connect(trackOut);
+        presence.type = 'peaking'; presence.frequency.value = 5000; presence.Q.value = 0.9; presence.gain.value = 5;
+        const air = offlineCtx.createBiquadFilter();
+        air.type = 'highshelf'; air.frequency.value = 10000; air.gain.value = 3;
+        hp.connect(antiBocal); antiBocal.connect(antiNasal); antiNasal.connect(presence); presence.connect(air); air.connect(trackOut);
         trackOut = hp;
       }
 
@@ -7094,7 +7224,7 @@ document.addEventListener('keydown', e => {
     e.preventDefault();
     if (state.isRecording) pauseRecording();
     else if (state.take && !document.getElementById('editorPanel').classList.contains('hidden')) {
-      if (state.playback.active) stopMixPlayback(); else playMix();
+      if (state.playback.active) pauseMixPlayback(); else playMix();
     } else startRecording();
     return;
   }
