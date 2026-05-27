@@ -1174,6 +1174,8 @@
     background: linear-gradient(180deg, var(--panel-1) 0%, var(--panel-2) 100%);
     border-radius: 8px; padding: 24px;
     max-width: 460px; width: 100%;
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
     border: 1px solid var(--border);
     box-shadow:
       inset 0 1px 0 rgba(255,255,255,0.06),
@@ -1697,7 +1699,7 @@
       <div><kbd>M</kbd> &nbsp; Silencer la sélection</div>
       <div><kbd>Suppr</kbd> &nbsp; Supprimer la sélection (la suite s'aimante pour combler le trou)</div>
       <div><kbd>Ctrl+C</kbd> / <kbd>Ctrl+X</kbd> / <kbd>Ctrl+V</kbd> &nbsp; Copier / Couper / Coller (presse-papier interne)</div>
-      <div><kbd>Ctrl+Maj+C</kbd> / <kbd>Ctrl+Maj+X</kbd> &nbsp; Pader / Pader & couper (zone vers un nouveau pad)</div>
+      <div><kbd>Ctrl+Maj+C</kbd> / <kbd>Ctrl+Maj+X</kbd> &nbsp; Copier-pader / Couper-pader (zone vers un nouveau pad)</div>
       <div><kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd> &nbsp; Annuler / Rétablir</div>
       <div><kbd>Ctrl+S</kbd> &nbsp; Sauvegarder le projet</div>
     </div>
@@ -4693,8 +4695,15 @@ function setPlayheadTime(t) {
   const ph = document.getElementById('playhead');
   ph.classList.add('visible');
   ph.style.left = (TRACK_HEAD_W + t * state.zoomPxPerSec) + 'px';
+  const wasPlaying = state.playback.active;
   state.playback.startAtTime = t;
   updateMixDurationDisplay();
+  // Si la lecture était en cours, on la relance depuis la nouvelle position
+  if (wasPlaying) {
+    stopMixPlayback();
+    state.playback.startAtTime = t; // stopMixPlayback restaure lastPlayedFrom, on réécrase
+    playMix();
+  }
 }
 
 // ===================== Actions sur sélection voix =====================
@@ -5544,6 +5553,8 @@ function playMix() {
   const startAt = state.playback.startAtTime || 0;
   // Mémoriser le point de départ pour pouvoir y revenir au Stop (comportement Audacity)
   state.playback.lastPlayedFrom = startAt;
+  // Mettre le timer en mode "live" (rouge vif)
+  document.getElementById('editorTimer').classList.add('live');
 
   const ctx = state.audioCtx;
   // Bus master avec limiteur de sécurité (protège des saturations causées par superposition + normalisations)
@@ -5667,6 +5678,7 @@ function stopMixPlayback() {
   if (state.playback.rafId) cancelAnimationFrame(state.playback.rafId);
   document.getElementById('btnPlayMix').innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6,4 20,12 6,20"/></svg>Lecture';
   document.getElementById('btnStopMix').disabled = true;
+  document.getElementById('editorTimer').classList.remove('live');
   // Revenir à la position de départ initiale (comportement Audacity)
   if (state.playback.lastPlayedFrom != null) {
     setPlayheadTime(state.playback.lastPlayedFrom);
@@ -7100,21 +7112,13 @@ document.addEventListener('keydown', e => {
     const delta = (e.key === 'ArrowRight') ? 3 : -3;
     const current = (state.playback.startAtTime || 0);
     const newT = Math.max(0, Math.min(state.take.duration, current + delta));
-    setPlayheadTime(newT);
-    updateMixDurationDisplay();
-    // Si on est en lecture, on relance depuis la nouvelle position
-    if (state.playback.active) {
-      stopMixPlayback();
-      state.playback.startAtTime = newT;
-      playMix();
-    } else {
-      // Auto-scroll pour suivre le playhead s'il sort de la zone visible
-      const container = document.getElementById('timelineContainer');
-      if (container) {
-        const x = TRACK_HEAD_W + newT * state.zoomPxPerSec;
-        if (x < container.scrollLeft + 80) container.scrollLeft = Math.max(0, x - 80);
-        else if (x > container.scrollLeft + container.clientWidth - 80) container.scrollLeft = x - container.clientWidth + 80;
-      }
+    setPlayheadTime(newT); // gère aussi le redémarrage de la lecture si elle était active
+    // Auto-scroll pour suivre le playhead s'il sort de la zone visible
+    const container = document.getElementById('timelineContainer');
+    if (container) {
+      const x = TRACK_HEAD_W + newT * state.zoomPxPerSec;
+      if (x < container.scrollLeft + 80) container.scrollLeft = Math.max(0, x - 80);
+      else if (x > container.scrollLeft + container.clientWidth - 80) container.scrollLeft = x - container.clientWidth + 80;
     }
     return;
   }
