@@ -5856,8 +5856,6 @@ document.getElementById('btnPlayMix').addEventListener('click', () => {
 });
 document.getElementById('btnStopMix').addEventListener('click', () => {
   stopMixPlayback();
-  state.playback.startAtTime = 0;
-  document.getElementById('playhead').classList.remove('visible');
 });
 document.getElementById('btnNewProject').addEventListener('click', async () => {
   if (!(await confirmDiscardDraft('crées un nouveau projet'))) return;
@@ -7231,7 +7229,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     if (state.isRecording) stopRecording();
     else if (state.voiceSelection) { state.voiceSelection = null; renderTimeline(); }
-    else if (state.playback.active) { stopMixPlayback(); document.getElementById('playhead').classList.remove('visible'); }
+    else if (state.playback.active) { stopMixPlayback(); }
     return;
   }
   // s / S (sans Ctrl) = scinder
