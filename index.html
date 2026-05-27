@@ -3743,42 +3743,76 @@ function renderVoiceClipsInTrack(container, track) {
   });
 }
 
+// Largeur max d'un seul canvas (les navigateurs limitent à ~16384 px). On reste large sous la limite pour le DPR.
+const MAX_CANVAS_DIM = 8000;
+
 function drawClipWaveform(canvas, clip, color, trackVol) {
   const buf = getClipBuffer(clip);
   if (!canvas || !buf) return;
   const dur = clip.sourceEnd - clip.sourceStart;
   const widthPx = Math.max(1, dur * state.zoomPxPerSec);
-  let dpr = window.devicePixelRatio || 1;
+  const dpr = window.devicePixelRatio || 1;
   const canvasHeight = VOICE_TRACK_HEIGHT - 18;
-  // Les navigateurs limitent les canvas à ~16384 px par dimension. Au-delà, le canvas devient
-  // invalide ou rendu en blanc. On plafonne la largeur interne en réduisant le DPR si besoin.
-  const MAX_CANVAS_DIM = 16000;
-  if (widthPx * dpr > MAX_CANVAS_DIM) {
-    dpr = MAX_CANVAS_DIM / widthPx;
-    if (dpr < 1) dpr = 1; // si même à dpr=1 on est au-dessus, on accepte un canvas un peu pixelisé
+
+  // Calculer le volume effectif et la couleur (idem ancien code)
+  const effectiveGain = (clip.volume ?? 1) * (trackVol ?? 1);
+  const normalColor = clip.muted ? '#475569' : (color || '#3b82f6');
+  const clipColor = '#ef4444';
+
+  // Largeur logique max par "tuile" de canvas (sécurité 8000px × dpr ≤ 16000)
+  const maxTilePx = Math.floor(MAX_CANVAS_DIM / dpr);
+
+  // Si le clip rentre dans un seul canvas, comportement classique
+  if (widthPx <= maxTilePx) {
+    drawWaveformOnCanvas(canvas, buf, clip.sourceStart, clip.sourceEnd, 0, widthPx, canvasHeight, dpr, effectiveGain, normalColor, clipColor);
+    canvas.style.marginTop = '18px';
+    return;
   }
-  const internalW = Math.min(MAX_CANVAS_DIM, Math.floor(widthPx * dpr));
+
+  // Sinon, on doit subdiviser en plusieurs tuiles. Le `canvas` passé devient juste un container :
+  // on lui donne la bonne taille et on remplace son contenu par plusieurs <canvas> côte à côte.
+  // Mais comme c'est un <canvas> à la base, on ne peut pas y mettre d'enfants. On le remplace par un <div>.
+  const parent = canvas.parentNode;
+  if (!parent) return;
+  const container = document.createElement('div');
+  container.className = 'voice-clip-canvas-tiles';
+  container.dataset.clipCanvas = canvas.dataset.clipCanvas;
+  container.style.cssText = `position: relative; width: ${widthPx}px; height: ${canvasHeight}px; margin-top: 18px; display: flex;`;
+
+  const nbTiles = Math.ceil(widthPx / maxTilePx);
+  const dur_sec = clip.sourceEnd - clip.sourceStart;
+  for (let i = 0; i < nbTiles; i++) {
+    const tileStartPx = i * maxTilePx;
+    const tileEndPx = Math.min(widthPx, (i + 1) * maxTilePx);
+    const tileWidth = tileEndPx - tileStartPx;
+    // Mapper la portion de clip correspondante
+    const srcStart = clip.sourceStart + (tileStartPx / widthPx) * dur_sec;
+    const srcEnd = clip.sourceStart + (tileEndPx / widthPx) * dur_sec;
+    const tileCanvas = document.createElement('canvas');
+    tileCanvas.style.cssText = `width: ${tileWidth}px; height: ${canvasHeight}px; display: block;`;
+    container.appendChild(tileCanvas);
+    drawWaveformOnCanvas(tileCanvas, buf, srcStart, srcEnd, 0, tileWidth, canvasHeight, dpr, effectiveGain, normalColor, clipColor);
+  }
+
+  parent.replaceChild(container, canvas);
+}
+
+// Dessine une portion de waveform sur un canvas donné, sans gérer le tuilage.
+function drawWaveformOnCanvas(canvas, buf, srcStart, srcEnd, offsetX, widthPx, heightPx, dpr, effectiveGain, normalColor, clipColor) {
   canvas.style.width = widthPx + 'px';
-  canvas.style.height = canvasHeight + 'px';
-  canvas.style.marginTop = '18px';
-  canvas.width = internalW;
-  canvas.height = Math.floor(canvasHeight * dpr);
+  canvas.style.height = heightPx + 'px';
+  canvas.width = Math.floor(widthPx * dpr);
+  canvas.height = Math.floor(heightPx * dpr);
   const ctx = canvas.getContext('2d');
-  ctx.setTransform(1,0,0,1,0,0);
-  // On scale pour mapper les coords logiques (widthPx × canvasHeight) sur les coords internes
-  ctx.scale(internalW / widthPx, dpr);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.scale(dpr, dpr);
   const data = buf.getChannelData(0);
-  const sampleStart = Math.floor(clip.sourceStart * buf.sampleRate);
-  const sampleEnd = Math.floor(clip.sourceEnd * buf.sampleRate);
+  const sampleStart = Math.floor(srcStart * buf.sampleRate);
+  const sampleEnd = Math.floor(srcEnd * buf.sampleRate);
   const sampleRange = sampleEnd - sampleStart;
   if (sampleRange <= 0) return;
   const samplesPerPx = sampleRange / widthPx;
-  const H = canvasHeight, mid = H / 2;
-
-  // Volume effectif : volume du clip × volume de la piste
-  const effectiveGain = (clip.volume ?? 1) * (trackVol ?? 1);
-  const normalColor = clip.muted ? '#475569' : (color || '#3b82f6');
-  const clipColor = '#ef4444'; // rouge écrêtage
+  const H = heightPx, mid = H / 2;
 
   for (let x = 0; x < widthPx; x++) {
     const s = sampleStart + Math.floor(x * samplesPerPx);
@@ -3789,10 +3823,8 @@ function drawClipWaveform(canvas, clip, color, trackVol) {
       if (v < mn) mn = v;
       if (v > mx) mx = v;
     }
-    // Amplification visuelle par le gain
     const ampMin = mn * effectiveGain;
     const ampMax = mx * effectiveGain;
-    // Clipping virtuel à ±1.0
     const clippedMin = Math.max(-1, ampMin);
     const clippedMax = Math.min(1, ampMax);
     const isClipping = (ampMin < -1) || (ampMax > 1);
@@ -4212,51 +4244,44 @@ function drawEventWaveform(canvas, ev, trackVol) {
   if (!buf) return;
   const widthPx = Math.max(1, ev.duration * state.zoomPxPerSec);
   const heightPx = 92;
-  let dpr = window.devicePixelRatio || 1;
-  // Plafonner la largeur interne du canvas (limite ~16384 px des navigateurs)
-  const MAX_CANVAS_DIM = 16000;
-  if (widthPx * dpr > MAX_CANVAS_DIM) {
-    dpr = MAX_CANVAS_DIM / widthPx;
-    if (dpr < 1) dpr = 1;
-  }
-  const internalW = Math.min(MAX_CANVAS_DIM, Math.floor(widthPx * dpr));
-  canvas.style.width = widthPx + 'px';
-  canvas.style.height = heightPx + 'px';
-  canvas.width = internalW;
-  canvas.height = Math.floor(heightPx * dpr);
-  const ctx = canvas.getContext('2d');
-  ctx.setTransform(1,0,0,1,0,0);
-  ctx.scale(internalW / widthPx, dpr);
-  const data = buf.getChannelData(0);
-  const sampleStart = Math.floor((ev.sourceStart ?? 0) * buf.sampleRate);
-  const sampleEnd = Math.floor((ev.sourceEnd ?? buf.duration) * buf.sampleRate);
-  const sampleRange = sampleEnd - sampleStart;
-  if (sampleRange <= 0) return;
-  const samplesPerPx = sampleRange / widthPx;
-  const mid = heightPx / 2;
+  const dpr = window.devicePixelRatio || 1;
   const effectiveGain = (ev.volume ?? 1) * (trackVol ?? 1);
-  // Couleur dorée laiton, comme les clips voix (cohérence visuelle)
   const normalColor = '#d4af37';
   const clipColor = '#ef4444';
-  for (let x = 0; x < widthPx; x++) {
-    const s = sampleStart + Math.floor(x * samplesPerPx);
-    const e = sampleStart + Math.floor((x + 1) * samplesPerPx);
-    let mn = 1, mx = -1;
-    for (let i = s; i < e && i < data.length; i++) {
-      const v = data[i] || 0;
-      if (v < mn) mn = v;
-      if (v > mx) mx = v;
-    }
-    const ampMin = mn * effectiveGain;
-    const ampMax = mx * effectiveGain;
-    const clippedMin = Math.max(-1, ampMin);
-    const clippedMax = Math.min(1, ampMax);
-    const isClipping = (ampMin < -1) || (ampMax > 1);
-    const y1 = mid + clippedMin * mid * 0.85;
-    const y2 = mid + clippedMax * mid * 0.85;
-    ctx.fillStyle = isClipping ? clipColor : normalColor;
-    ctx.fillRect(x, y1, 1, Math.max(1, y2 - y1));
+  const srcStart = ev.sourceStart ?? 0;
+  const srcEnd = ev.sourceEnd ?? buf.duration;
+
+  const maxTilePx = Math.floor(MAX_CANVAS_DIM / dpr);
+
+  // Cas simple : tient dans un seul canvas
+  if (widthPx <= maxTilePx) {
+    drawWaveformOnCanvas(canvas, buf, srcStart, srcEnd, 0, widthPx, heightPx, dpr, effectiveGain, normalColor, clipColor);
+    return;
   }
+
+  // Sinon, on tuile : remplacer le canvas par un container avec plusieurs canvas
+  const parent = canvas.parentNode;
+  if (!parent) return;
+  const container = document.createElement('div');
+  container.className = 'event-canvas-tiles';
+  container.dataset.eventCanvas = canvas.dataset.eventCanvas;
+  container.style.cssText = `position: relative; width: ${widthPx}px; height: ${heightPx}px; display: flex;`;
+
+  const nbTiles = Math.ceil(widthPx / maxTilePx);
+  const dur_sec = srcEnd - srcStart;
+  for (let i = 0; i < nbTiles; i++) {
+    const tileStartPx = i * maxTilePx;
+    const tileEndPx = Math.min(widthPx, (i + 1) * maxTilePx);
+    const tileWidth = tileEndPx - tileStartPx;
+    const tileSrcStart = srcStart + (tileStartPx / widthPx) * dur_sec;
+    const tileSrcEnd = srcStart + (tileEndPx / widthPx) * dur_sec;
+    const tileCanvas = document.createElement('canvas');
+    tileCanvas.style.cssText = `width: ${tileWidth}px; height: ${heightPx}px; display: block;`;
+    container.appendChild(tileCanvas);
+    drawWaveformOnCanvas(tileCanvas, buf, tileSrcStart, tileSrcEnd, 0, tileWidth, heightPx, dpr, effectiveGain, normalColor, clipColor);
+  }
+
+  parent.replaceChild(container, canvas);
 }
 
 // Rognage des events : drag sur la poignée gauche modifie sourceStart, droite modifie sourceEnd.
