@@ -696,6 +696,7 @@
   .timeline-container.drop-active { border-color: var(--brass); box-shadow: inset 0 0 0 2px var(--brass), inset 0 2px 6px rgba(0,0,0,0.6); }
   .timeline-inner { position: relative; }
   .timeline-track { position: relative; border-bottom: 1px solid #1a1816; overflow: visible; display: flex; }
+  .timeline-track.track-inaudible { opacity: 0.4; transition: opacity 0.15s; }
   .timeline-track.drop-target .track-content { box-shadow: inset 0 0 0 2px var(--brass); }
   .voice-clip.dragging-cross-track, .event-block.dragging-cross-track { pointer-events: none; opacity: 0.85; box-shadow: 0 4px 16px rgba(0,0,0,0.7), inset 0 0 0 2px var(--brass) !important; z-index: 50; }
   .timeline-track:last-child { border-bottom: none; }
@@ -1735,6 +1736,8 @@
       <div class="help-desc">Annuler / Rétablir</div>
       <div class="help-cmd"><kbd>Ctrl+S</kbd></div>
       <div class="help-desc">Sauvegarder le projet</div>
+      <div class="help-cmd"><kbd>Ctrl+←</kbd> / <kbd>Ctrl+→</kbd></div>
+      <div class="help-desc">Coller le clip sélectionné au voisin précédent / suivant</div>
     </div>
 
     <h4 class="help-section-title">Gestes timeline</h4>
@@ -1992,6 +1995,74 @@ function findEventById(id) {
   }
   return null;
 }
+
+// Colle le clip/event sélectionné au voisin précédent (-1) ou suivant (+1) de la même piste.
+// Si pas de voisin dans cette direction, on colle au début/fin de la timeline.
+function snapSelectedToNeighbor(direction) {
+  if (!state.take || !state.selectedKind || !state.selectedId) return;
+  let track, item, items, duration;
+  if (state.selectedKind === 'voice') {
+    const found = findClipById(state.selectedId);
+    if (!found) return;
+    track = found.track; item = found.clip;
+    items = track.clips;
+    duration = item.sourceEnd - item.sourceStart;
+  } else if (state.selectedKind === 'event') {
+    const found = findEventById(state.selectedId);
+    if (!found) return;
+    track = found.track; item = found.event;
+    items = track.events;
+    duration = item.duration;
+  } else return;
+
+  // Liste des autres items triés par position
+  const others = items.filter(x => x.id !== item.id).slice().sort((a, b) => a.time - b.time);
+  const currentStart = item.time;
+  const currentEnd = item.time + duration;
+
+  let newTime;
+  if (direction > 0) {
+    // Vers la droite : on cherche le 1er voisin dont la fin est strictement après notre fin actuelle.
+    // On colle notre début à sa fin.
+    let target = null;
+    for (const x of others) {
+      const xEnd = x.time + getItemDuration(x, track);
+      if (xEnd > currentEnd + 0.001) { target = x; break; }
+    }
+    if (target) {
+      newTime = target.time + getItemDuration(target, track);
+    } else {
+      // Pas de voisin à droite : aligner à la fin de la timeline (sans dépasser)
+      newTime = Math.max(0, state.take.duration - duration);
+    }
+  } else {
+    // Vers la gauche : on cherche le 1er voisin (en partant de la gauche du courant)
+    // dont le début est strictement avant notre début actuel.
+    // On colle notre fin à son début.
+    let target = null;
+    for (let i = others.length - 1; i >= 0; i--) {
+      if (others[i].time < currentStart - 0.001) { target = others[i]; break; }
+    }
+    if (target) {
+      newTime = Math.max(0, target.time - duration);
+    } else {
+      // Pas de voisin à gauche : aligner au début
+      newTime = 0;
+    }
+  }
+
+  if (Math.abs(newTime - item.time) < 0.001) return; // Pas de mouvement notable
+  item.time = newTime;
+  recomputeDuration();
+  pushHistory();
+  renderTimeline();
+}
+
+// Renvoie la durée d'un item (clip voix ou event bruitage)
+function getItemDuration(item, track) {
+  if (track.type === 'voice') return item.sourceEnd - item.sourceStart;
+  return item.duration;
+}
 // Toutes les clips voix, à plat (utile pour render global, mix, snapToClips)
 function getAllClips() {
   if (!state.take) return [];
@@ -2199,7 +2270,9 @@ async function dbClearBankPads(bankId) {
 // ===================== Audio setup =====================
 function ensureAudioCtx() {
   if (state.audioCtx) return;
-  state.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  // latencyHint 'playback' : favorise la stabilité audio (anti-craquement) plutôt que la latence minimale.
+  // Pour un studio de podcast, la latence importe peu, on veut surtout pas de drop-out audio quand l'UI bouge.
+  state.audioCtx = new (window.AudioContext || window.webkitAudioContext)({ latencyHint: 'playback' });
   state.micGain = state.audioCtx.createGain();
   state.padsGain = state.audioCtx.createGain();
   state.padsGain.gain.value = 0.8;
@@ -3489,14 +3562,18 @@ function renderTracks(w) {
       track.muted = !track.muted;
       updateLiveTrackGains();
       pushHistory();
-      renderTimeline();
+      // Update visuel minimal : juste les boutons M/S et l'opacité des clips/events de cette piste
+      e.currentTarget.classList.toggle('active', track.muted);
+      updateTrackMutedVisual(track);
     });
     head.querySelector(`[data-solo="${track.id}"]`).addEventListener('click', e => {
       e.stopPropagation();
       track.solo = !track.solo;
       updateLiveTrackGains();
       pushHistory();
-      renderTimeline();
+      e.currentTarget.classList.toggle('active', track.solo);
+      // Un toggle solo affecte l'audibilité de TOUTES les pistes (logique solo)
+      state.take.tracks.forEach(t => updateTrackMutedVisual(t));
     });
     const mvUp = head.querySelector(`[data-move-up="${track.id}"]`);
     if (mvUp) mvUp.addEventListener('click', e => { e.stopPropagation(); moveTrack(track.id, -1); });
@@ -4733,6 +4810,22 @@ function timelineBackgroundClick(e) {
   }
 }
 document.getElementById('timelineContainer').addEventListener('click', timelineBackgroundClick);
+
+// Met à jour visuellement une piste comme étant mute/inaudible (CSS uniquement, pas de re-render).
+// `audible` est recalculé en tenant compte du contexte solo global.
+function updateTrackMutedVisual(track) {
+  const anySolo = state.take && state.take.tracks.some(t => t.solo);
+  const audible = track.muted ? false : (anySolo ? !!track.solo : true);
+  const trackEl = document.querySelector(`.timeline-track[data-track-id="${track.id}"]`);
+  if (trackEl) trackEl.classList.toggle('track-inaudible', !audible);
+  const headEl = document.querySelector(`.track-head[data-track-id="${track.id}"]`);
+  if (headEl) {
+    const muteBtn = headEl.querySelector(`[data-mute="${track.id}"]`);
+    const soloBtn = headEl.querySelector(`[data-solo="${track.id}"]`);
+    if (muteBtn) muteBtn.classList.toggle('active', !!track.muted);
+    if (soloBtn) soloBtn.classList.toggle('active', !!track.solo);
+  }
+}
 
 // Met à jour les gains des pistes en cours de lecture pour appliquer mute/solo en direct
 function updateLiveTrackGains() {
@@ -7294,13 +7387,28 @@ document.addEventListener('keydown', e => {
       return;
     }
   }
+  // Ctrl+flèche gauche/droite : coller le clip sélectionné au clip précédent/suivant de la même piste
+  if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && (e.ctrlKey || e.metaKey)
+      && state.take && state.selectedKind && state.selectedId
+      && !document.getElementById('editorPanel').classList.contains('hidden')) {
+    e.preventDefault();
+    snapSelectedToNeighbor(e.key === 'ArrowRight' ? 1 : -1);
+    return;
+  }
   // Flèches gauche/droite : reculer / avancer le playhead de 3 secondes (uniquement dans l'éditeur)
   if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight')
+      && !e.ctrlKey && !e.metaKey
       && state.take
       && !document.getElementById('editorPanel').classList.contains('hidden')) {
     e.preventDefault();
     const delta = (e.key === 'ArrowRight') ? 3 : -3;
-    const current = (state.playback.startAtTime || 0);
+    // Position courante : pendant la lecture, c'est startAtTime + temps écoulé ; sinon c'est startAtTime
+    let current;
+    if (state.playback.active) {
+      current = state.playback.startAtTime + (state.audioCtx.currentTime - state.playback.startCtxTime);
+    } else {
+      current = state.playback.startAtTime || 0;
+    }
     const newT = Math.max(0, Math.min(state.take.duration, current + delta));
     setPlayheadTime(newT); // gère aussi le redémarrage de la lecture si elle était active
     // Auto-scroll pour suivre le playhead s'il sort de la zone visible
