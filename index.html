@@ -1753,7 +1753,7 @@
       <div class="help-cmd"><kbd>Espace</kbd></div>
       <div class="help-desc">Enregistrer / Pause (ou Lecture / Pause dans l'éditeur)</div>
       <div class="help-cmd"><kbd>Échap</kbd></div>
-      <div class="help-desc">Stop, ou annuler la sélection</div>
+      <div class="help-desc">Stop, ou annuler la sélection (simple ou multiple)</div>
       <div class="help-cmd"><kbd>F11</kbd></div>
       <div class="help-desc">Mode présentateur plein écran</div>
     </div>
@@ -1798,6 +1798,8 @@
       <div class="help-desc">Déplacer le clip</div>
       <div class="help-cmd"><strong>Ctrl+glisser</strong> un clip voix</div>
       <div class="help-desc">Déplace aussi les bruitages liés (= pistes de même couleur)</div>
+      <div class="help-cmd"><strong>Maj+clic</strong> sur des clips / bruitages</div>
+      <div class="help-desc">Sélection multiple — glisser le groupe le déplace ensemble, Suppr les efface tous</div>
       <div class="help-cmd"><strong>Glisser les bords</strong> d'un clip ou bruitage</div>
       <div class="help-desc">Rogner le début / la fin</div>
       <div class="help-cmd"><strong>Cliquer-glisser sur le corps</strong> d'un clip voix</div>
@@ -1941,8 +1943,11 @@ const state = {
   } */
 
   zoomPxPerSec: 60,
-  selectedKind: null,   // 'voice' | 'event' | null
+  selectedKind: null,   // 'voice' | 'event' | null — élément "principal" pour l'inspecteur
   selectedId: null,
+  // Sélection multiple : tableau d'items {kind:'voice'|'event', id:string}.
+  // Contient toujours au minimum {selectedKind, selectedId} si défini.
+  selection: [],
   voiceSelection: null, // { start, end, clipId, trackId }
   activeTrackId: null,  // piste active : reçoit les nouveaux clips/events
   projectPads: [],      // pads du projet en cours (en mémoire seulement, embarqués dans le .mixo)
@@ -2152,6 +2157,74 @@ function getItemDuration(item, track) {
   return item.duration;
 }
 
+// ===================== Sélection multiple =====================
+// L'élément "principal" (selectedKind/selectedId) est toujours dans state.selection.
+// Quand selection est vide → selectedKind=null, selectedId=null.
+
+function selectSingleItem(kind, id) {
+  state.selection = [{ kind, id }];
+  state.selectedKind = kind;
+  state.selectedId = id;
+}
+
+function toggleItemInSelection(kind, id) {
+  const idx = state.selection.findIndex(s => s.kind === kind && s.id === id);
+  if (idx >= 0) {
+    state.selection.splice(idx, 1);
+    if (state.selectedKind === kind && state.selectedId === id) {
+      // L'élément retiré était le principal : on prend le suivant (ou rien)
+      if (state.selection.length > 0) {
+        state.selectedKind = state.selection[0].kind;
+        state.selectedId = state.selection[0].id;
+      } else {
+        state.selectedKind = null;
+        state.selectedId = null;
+      }
+    }
+  } else {
+    state.selection.push({ kind, id });
+    state.selectedKind = kind;
+    state.selectedId = id;
+  }
+}
+
+function clearSelection() {
+  state.selection = [];
+  state.selectedKind = null;
+  state.selectedId = null;
+}
+
+function isItemSelected(kind, id) {
+  return state.selection.some(s => s.kind === kind && s.id === id);
+}
+
+// Renvoie les items sélectionnés avec leur référence concrète (clip + track, ou event + track).
+// Items invalides (déjà supprimés du modèle) filtrés.
+function getSelectionItems() {
+  if (!state.take) return [];
+  const out = [];
+  for (const s of state.selection) {
+    if (s.kind === 'voice') {
+      const f = findClipById(s.id);
+      if (f) out.push({ kind: 'voice', clip: f.clip, track: f.track });
+    } else if (s.kind === 'event') {
+      const f = findEventById(s.id);
+      if (f) out.push({ kind: 'event', event: f.event, track: f.track });
+    }
+  }
+  return out;
+}
+
+// Synchronise selection avec selectedKind/Id quand le code legacy set juste selectedKind/Id.
+// À appeler après les anciens points qui modifiaient juste selectedKind/Id (clic simple sur un item).
+function syncSelectionFromSelected() {
+  if (state.selectedKind && state.selectedId) {
+    state.selection = [{ kind: state.selectedKind, id: state.selectedId }];
+  } else {
+    state.selection = [];
+  }
+}
+
 // Déplace le clip voix sélectionné vers la piste voix précédente (-1) ou suivante (+1).
 // Si la piste voisine n'existe pas, on en crée une nouvelle juste à côté.
 function moveSelectedClipToAdjacentVoiceTrack(direction) {
@@ -2264,6 +2337,12 @@ function restoreFromSnapshot(snap) {
     }
     if (state.selectedKind === 'voice' && !findClipById(state.selectedId)) {
       state.selectedKind = null; state.selectedId = null;
+    }
+    // Nettoyer la sélection multiple : retirer les items qui n'existent plus
+    if (state.selection && state.selection.length) {
+      state.selection = state.selection.filter(s =>
+        s.kind === 'voice' ? !!findClipById(s.id) : !!findEventById(s.id)
+      );
     }
     if (state.activeTrackId && !findTrack(state.activeTrackId)) {
       state.activeTrackId = state.take.tracks[0]?.id || null;
@@ -3567,6 +3646,15 @@ function getTimelineWidth() {
 
 function renderTimeline() {
   if (!state.take) return;
+  // Cohérence sélection : si un élément principal est défini mais pas dans la sélection multi,
+  // on (re)synchronise. Cas du code legacy qui set juste selectedKind/Id.
+  if (state.selectedKind && state.selectedId) {
+    if (!state.selection || !state.selection.some(s => s.kind === state.selectedKind && s.id === state.selectedId)) {
+      state.selection = [{ kind: state.selectedKind, id: state.selectedId }];
+    }
+  } else if (!state.selection || state.selection.length === 0) {
+    state.selection = [];
+  }
   const w = getTimelineWidth();
   document.getElementById('timelineInner').style.width = w + 'px';
   document.getElementById('timelineRuler').style.width = w + 'px';
@@ -3926,7 +4014,7 @@ function renderVoiceClipsInTrack(container, track) {
     const el = document.createElement('div');
     el.className = 'voice-clip'
       + (clip.muted ? ' muted' : '')
-      + (state.selectedKind === 'voice' && state.selectedId === clip.id ? ' selected' : '');
+      + (isItemSelected('voice', clip.id) ? ' selected' : '');
     el.style.left = left + 'px';
     el.style.width = width + 'px';
     el.dataset.id = clip.id;
@@ -4167,11 +4255,31 @@ function setupVoiceClipInteraction(el, clip, track) {
       startX: e.clientX,
       startY: e.clientY,
       startTime: clip.time,
-      ctrl: e.ctrlKey || e.metaKey || e.shiftKey,
+      ctrl: e.ctrlKey || e.metaKey,  // Ctrl seulement : embarque les pistes liées par couleur
       attached: null,
       originTrackId: track.id,
     };
-    if (drag.ctrl) {
+    // Si le clip drag fait partie d'une multi-sélection, on embarque les autres items sélectionnés
+    const inMultiSelection = isItemSelected('voice', clip.id) && state.selection.length > 1;
+    if (inMultiSelection) {
+      drag.attached = [];
+      for (const s of state.selection) {
+        if (s.kind === 'voice' && s.id === clip.id) continue; // on ne s'embarque pas soi-même
+        if (s.kind === 'voice') {
+          const f = findClipById(s.id);
+          if (f) {
+            const cEl = document.querySelector(`.voice-clip[data-id="${f.clip.id}"]`);
+            drag.attached.push({ kind: 'voiceClip', clip: f.clip, relTime: f.clip.time - clip.time, el: cEl });
+          }
+        } else if (s.kind === 'event') {
+          const f = findEventById(s.id);
+          if (f) {
+            const evEl = document.querySelector(`.event-block[data-id="${f.event.id}"]`);
+            drag.attached.push({ kind: 'event', ev: f.event, relTime: f.event.time - clip.time, el: evEl });
+          }
+        }
+      }
+    } else if (drag.ctrl) {
       // Embarquer les éléments qui tombent dans l'intervalle du clip, sur les pistes liées
       // (= pistes de même couleur), aussi bien bruitages (events) que voix (clips).
       const t0 = clip.time;
@@ -4193,16 +4301,23 @@ function setupVoiceClipInteraction(el, clip, track) {
       for (const t of voiceTracks) {
         for (const c of t.clips) {
           const cEnd = c.time + (c.sourceEnd - c.sourceStart);
-          // On embarque tout clip dont la zone chevauche l'intervalle du clip dragé
           if (cEnd > t0 && c.time < t1) {
-            const cEl = document.querySelector(`.voice-clip[data-clip-id="${c.id}"]`);
+            const cEl = document.querySelector(`.voice-clip[data-id="${c.id}"]`);
             drag.attached.push({ kind: 'voiceClip', clip: c, relTime: c.time - t0, el: cEl });
           }
         }
       }
     }
-    state.selectedKind = 'voice';
-    state.selectedId = clip.id;
+    // Mettre selection à jour : si clic simple non-multi, c'est juste ce clip
+    if (!inMultiSelection) {
+      state.selectedKind = 'voice';
+      state.selectedId = clip.id;
+      state.selection = [{ kind: 'voice', id: clip.id }];
+    } else {
+      // En multi : faire de ce clip l'élément principal mais conserver la sélection
+      state.selectedKind = 'voice';
+      state.selectedId = clip.id;
+    }
     state.activeTrackId = track.id;
     state.voiceSelection = null;
     el.classList.add('dragging');
@@ -4280,12 +4395,19 @@ function setupVoiceClipInteraction(el, clip, track) {
     e.preventDefault();
     // Ctrl+clic (ou Cmd+clic) sur le corps : ouvrir l'inspecteur, ne pas démarrer une sélection
     if (e.ctrlKey || e.metaKey) {
-      state.selectedKind = 'voice';
-      state.selectedId = clip.id;
+      selectSingleItem('voice', clip.id);
       state.activeTrackId = track.id;
       state.voiceSelection = null;
       state.inspectorRequestedFor = 'voice:' + clip.id;
       state.inspectorDismissedFor = null;
+      renderTimeline();
+      return;
+    }
+    // Maj+clic : ajouter/retirer de la sélection multiple
+    if (e.shiftKey) {
+      toggleItemInSelection('voice', clip.id);
+      if (state.selectedId === clip.id) state.activeTrackId = track.id;
+      state.voiceSelection = null;
       renderTimeline();
       return;
     }
@@ -4296,8 +4418,11 @@ function setupVoiceClipInteraction(el, clip, track) {
     // Position depuis l'origine de la timeline (corps du clip)
     const startT = mouseToTimelineX(e.clientX);
     sel = { startT, moved: false };
-    state.selectedKind = 'voice';
-    state.selectedId = clip.id;
+    // Si le clip cliqué fait déjà partie d'une multi-sélection, on garde la sélection (= drag du groupe).
+    // Sinon, on remplace la sélection par ce seul clip.
+    if (!isItemSelected('voice', clip.id)) {
+      selectSingleItem('voice', clip.id);
+    }
     state.activeTrackId = track.id;
     document.addEventListener('mousemove', onBodyMove);
     document.addEventListener('mouseup', onBodyUp);
@@ -4413,13 +4538,16 @@ function updateSelectionToolbar() {
   info.textContent = `Sélection : ${formatTime(sel.start)} → ${formatTime(sel.end)} (${(sel.end - sel.start).toFixed(2)}s)`;
 }
 
-function removeVoiceClip(id) {
+function removeVoiceClip(id, opts = {}) {
   const found = findClipById(id);
   if (!found) return;
   found.track.clips = found.track.clips.filter(c => c.id !== id);
   if (state.selectedKind === 'voice' && state.selectedId === id) {
     state.selectedKind = null; state.selectedId = null;
   }
+  // Retirer aussi de la sélection multiple
+  if (state.selection) state.selection = state.selection.filter(s => !(s.kind === 'voice' && s.id === id));
+  if (opts.skipRender) { recomputeDuration(); return; }
   recomputeDuration();
   pushHistory();
   renderTimeline();
@@ -4437,7 +4565,7 @@ function renderEventsInTrack(container, track) {
     ensureEventTrim(ev);
     const block = document.createElement('div');
     block.className = 'event-block'
-      + (state.selectedKind === 'event' && state.selectedId === ev.id ? ' selected' : '')
+      + (isItemSelected('event', ev.id) ? ' selected' : '')
       + (ev.muted ? ' muted' : '');
     block.style.left = (ev.time * state.zoomPxPerSec) + 'px';
     const blockWidth = Math.max(20, ev.duration * state.zoomPxPerSec);
@@ -4472,24 +4600,41 @@ function renderEventsInTrack(container, track) {
     drawEventWaveform(block.querySelector('canvas'), ev, track.volume ?? 1);
     block.addEventListener('click', e => {
       if (e.target.dataset.del || e.target.dataset.trim) return;
-      const wasSelected = (state.selectedKind === 'event' && state.selectedId === ev.id);
-      state.selectedKind = 'event';
-      state.selectedId = ev.id;
-      state.activeTrackId = track.id;
-      state.voiceSelection = null;
-      // Ctrl+clic (ou Cmd+clic sur Mac) : ouvrir le panneau de propriétés
+      // Maj+clic : ajouter/retirer de la sélection multiple
+      if (e.shiftKey) {
+        toggleItemInSelection('event', ev.id);
+        if (state.selectedId === ev.id) state.activeTrackId = track.id;
+        state.voiceSelection = null;
+        renderTimeline();
+        return;
+      }
+      const wasSelected = isItemSelected('event', ev.id);
+      // Ctrl+clic : sélection unique + inspecteur
       if (e.ctrlKey || e.metaKey) {
+        selectSingleItem('event', ev.id);
+        state.activeTrackId = track.id;
+        state.voiceSelection = null;
         state.inspectorRequestedFor = 'event:' + ev.id;
         state.inspectorDismissedFor = null;
         renderTimeline();
-      } else {
-        // Clic simple : reset l'éventuelle request précédente sur cet event
-        if (state.inspectorRequestedFor === 'event:' + ev.id) {
-          state.inspectorRequestedFor = null;
-        }
-        // On évite de re-render si l'event était déjà sélectionné : préserve le DOM pour permettre le dblclick
-        if (!wasSelected) renderTimeline();
+        return;
       }
+      // Clic simple : si déjà dans la multi-sélection, on garde la sélection (= drag du groupe).
+      // Sinon, on remplace la sélection par ce seul event.
+      if (!wasSelected) {
+        selectSingleItem('event', ev.id);
+      } else {
+        // S'il était déjà sélectionné, on en fait l'élément "principal" mais on garde la sélection multi
+        state.selectedKind = 'event';
+        state.selectedId = ev.id;
+      }
+      state.activeTrackId = track.id;
+      state.voiceSelection = null;
+      if (state.inspectorRequestedFor === 'event:' + ev.id) {
+        state.inspectorRequestedFor = null;
+      }
+      // On évite de re-render si l'event était déjà sélectionné : préserve le DOM pour permettre le dblclick
+      if (!wasSelected) renderTimeline();
     });
     block.querySelector('.event-block-del').addEventListener('click', e => { e.stopPropagation(); deleteEvent(ev.id); });
     // Bouton ⋯ ouvre l'inspecteur
@@ -4685,7 +4830,7 @@ function setupEventTrim(block, ev) {
 }
 
 function makeEventDraggable(block, ev, track) {
-  let startX, startY, startTime, originTrackId;
+  let startX, startY, startTime, originTrackId, attached;
   function onDown(clientX, e) {
     if (e && e.target.dataset.del) return;
     if (e && e.preventDefault) e.preventDefault();
@@ -4693,9 +4838,35 @@ function makeEventDraggable(block, ev, track) {
     startY = e ? e.clientY : 0;
     startTime = ev.time;
     originTrackId = track.id;
+    attached = null;
+    // Si l'event drag fait partie d'une multi-sélection, embarquer les autres items
+    const inMulti = isItemSelected('event', ev.id) && state.selection.length > 1;
+    if (inMulti) {
+      attached = [];
+      for (const s of state.selection) {
+        if (s.kind === 'event' && s.id === ev.id) continue;
+        if (s.kind === 'voice') {
+          const f = findClipById(s.id);
+          if (f) {
+            const cEl = document.querySelector(`.voice-clip[data-id="${f.clip.id}"]`);
+            attached.push({ kind: 'voiceClip', clip: f.clip, relTime: f.clip.time - ev.time, el: cEl });
+          }
+        } else if (s.kind === 'event') {
+          const f = findEventById(s.id);
+          if (f) {
+            const evEl = document.querySelector(`.event-block[data-id="${f.event.id}"]`);
+            attached.push({ kind: 'event', ev: f.event, relTime: f.event.time - ev.time, el: evEl });
+          }
+        }
+      }
+    }
     block.classList.add('dragging');
-    state.selectedKind = 'event';
-    state.selectedId = ev.id;
+    if (!inMulti) {
+      selectSingleItem('event', ev.id);
+    } else {
+      state.selectedKind = 'event';
+      state.selectedId = ev.id;
+    }
     state.activeTrackId = track.id;
     document.addEventListener('mousemove', onMouseMove);
     document.addEventListener('mouseup', onUp);
@@ -4706,6 +4877,17 @@ function makeEventDraggable(block, ev, track) {
     const newTime = Math.max(0, startTime + dt);
     ev.time = newTime;
     block.style.left = (newTime * state.zoomPxPerSec) + 'px';
+    if (attached) {
+      for (const a of attached) {
+        if (a.kind === 'voiceClip') {
+          a.clip.time = Math.max(0, newTime + a.relTime);
+          if (a.el) a.el.style.left = (a.clip.time * state.zoomPxPerSec) + 'px';
+        } else {
+          a.ev.time = Math.max(0, newTime + a.relTime);
+          if (a.el) a.el.style.left = (a.ev.time * state.zoomPxPerSec) + 'px';
+        }
+      }
+    }
     recomputeDuration();
 
     // Feedback visuel cross-track : highlight cible, le bloc reste en place dans la piste d'origine
@@ -4746,13 +4928,15 @@ function makeEventDraggable(block, ev, track) {
   if (handle) handle.addEventListener('mousedown', e => onDown(e.clientX, e));
 }
 
-function deleteEvent(id) {
+function deleteEvent(id, opts = {}) {
   const found = findEventById(id);
   if (!found) return;
   found.track.events = found.track.events.filter(e => e.id !== id);
   if (state.selectedKind === 'event' && state.selectedId === id) {
     state.selectedKind = null; state.selectedId = null;
   }
+  if (state.selection) state.selection = state.selection.filter(s => !(s.kind === 'event' && s.id === id));
+  if (opts.skipRender) { recomputeDuration(); return; }
   recomputeDuration();
   pushHistory();
   renderTimeline();
@@ -5453,7 +5637,8 @@ document.getElementById('btnUndo').addEventListener('click', undo);
 document.getElementById('btnRedo').addEventListener('click', redo);
 
 // ===================== Helpers audio : RMS et limiteur =====================
-const TARGET_RMS_DBFS = -16; // cible standard pour podcast (-14 à -18 typique)
+const TARGET_RMS_DBFS = -16; // (legacy, conservé pour compat) cible RMS
+const TARGET_LUFS = -14;     // cible loudness pour Spotify for Creators (norme ITU-R BS.1770)
 const MAX_GAIN = 12;          // limite de sécurité : on n'amplifie pas plus de +12 dB-linéaire ≈ x4
 
 // Calcule le RMS d'une portion d'AudioBuffer (linéaire 0..1)
@@ -5756,25 +5941,199 @@ function computeRMSOnActiveZones(buffer, track) {
   return count > 0 ? Math.sqrt(sumSquares / count) : 0;
 }
 
+// ===================== Mesure LUFS (loudness perçu, norme ITU-R BS.1770) =====================
+// Le LUFS mesure le volume tel que l'oreille le perçoit, contrairement au RMS qui est une
+// énergie brute. On applique un "K-weighting" (filtre qui imite la sensibilité de l'oreille :
+// atténue les graves, booste légèrement les aigus) avant de mesurer l'énergie moyenne.
+
+// Calcule le gain linéaire à appliquer pour passer d'un loudness mesuré à la cible TARGET_LUFS.
+function gainFromLUFS(lufs) {
+  if (!isFinite(lufs)) return 1;
+  const gainDb = TARGET_LUFS - lufs;
+  let gainLin = dbToLinear(gainDb);
+  if (gainLin > MAX_GAIN) gainLin = MAX_GAIN;
+  if (gainLin < 0.01) gainLin = 0.01;
+  return gainLin;
+}
+
+// Applique le K-weighting à un buffer (filtres en JS, norme BS.1770) et renvoie le loudness intégré
+// en LUFS, calculé uniquement sur les zones actives (intervalles de contenu).
+function computeLUFSOnActiveZones(buffer, track) {
+  const sr = buffer.sampleRate;
+  const src = buffer.getChannelData(0);
+
+  // --- K-weighting : 2 étages de biquad en cascade (coefficients BS.1770 à 48 kHz, adaptés au sr) ---
+  // Étage 1 : high-shelf ~+4 dB au-dessus de ~1.5 kHz (simule la diffraction de la tête)
+  // Étage 2 : high-pass ~38 Hz (RLB weighting)
+  // On recalcule les coefficients pour le sample rate courant.
+  function highShelfCoeffs(f0, gainDb, sr) {
+    const A = Math.pow(10, gainDb / 40);
+    const w0 = 2 * Math.PI * f0 / sr;
+    const cw = Math.cos(w0), sw = Math.sin(w0);
+    const S = 1; // pente
+    const alpha = sw / 2 * Math.sqrt((A + 1 / A) * (1 / S - 1) + 2);
+    const ap = A + 1, am = A - 1;
+    const sq = 2 * Math.sqrt(A) * alpha;
+    const b0 = A * (ap + am * cw + sq);
+    const b1 = -2 * A * (am + ap * cw);
+    const b2 = A * (ap + am * cw - sq);
+    const a0 = ap - am * cw + sq;
+    const a1 = 2 * (am - ap * cw);
+    const a2 = ap - am * cw - sq;
+    return { b0: b0 / a0, b1: b1 / a0, b2: b2 / a0, a1: a1 / a0, a2: a2 / a0 };
+  }
+  function highPassCoeffs(f0, Q, sr) {
+    const w0 = 2 * Math.PI * f0 / sr;
+    const cw = Math.cos(w0), sw = Math.sin(w0);
+    const alpha = sw / (2 * Q);
+    const b0 = (1 + cw) / 2, b1 = -(1 + cw), b2 = (1 + cw) / 2;
+    const a0 = 1 + alpha, a1 = -2 * cw, a2 = 1 - alpha;
+    return { b0: b0 / a0, b1: b1 / a0, b2: b2 / a0, a1: a1 / a0, a2: a2 / a0 };
+  }
+  const shelf = highShelfCoeffs(1500, 4, sr);
+  const hp = highPassCoeffs(38, 0.5, sr);
+
+  function applyBiquad(input, c) {
+    const out = new Float32Array(input.length);
+    let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+    for (let i = 0; i < input.length; i++) {
+      const x0 = input[i];
+      const y0 = c.b0 * x0 + c.b1 * x1 + c.b2 * x2 - c.a1 * y1 - c.a2 * y2;
+      out[i] = y0;
+      x2 = x1; x1 = x0; y2 = y1; y1 = y0;
+    }
+    return out;
+  }
+
+  // Appliquer le K-weighting sur tout le buffer
+  let weighted = applyBiquad(src, shelf);
+  weighted = applyBiquad(weighted, hp);
+
+  // Calculer le mean square pondéré sur les zones actives uniquement
+  const intervals = [];
+  if (track.type === 'voice') {
+    for (const clip of track.clips) {
+      if (clip.muted) continue;
+      const dur = clip.sourceEnd - clip.sourceStart;
+      if (dur > 0) intervals.push([clip.time, clip.time + dur]);
+    }
+  } else {
+    for (const ev of track.events) {
+      if (ev.muted) continue;
+      intervals.push([ev.time, ev.time + ev.duration]);
+    }
+  }
+  let sumSquares = 0, count = 0;
+  for (const [t0, t1] of intervals) {
+    const s0 = Math.max(0, Math.floor(t0 * sr));
+    const s1 = Math.min(weighted.length, Math.floor(t1 * sr));
+    for (let i = s0; i < s1; i++) {
+      const v = weighted[i] || 0;
+      sumSquares += v * v;
+      count++;
+    }
+  }
+  if (count === 0) return -Infinity;
+  const meanSquare = sumSquares / count;
+  if (meanSquare <= 0) return -Infinity;
+  // Formule BS.1770 : LUFS = -0.691 + 10*log10(mean_square)
+  return -0.691 + 10 * Math.log10(meanSquare);
+}
+
+// Rend une piste en offline AVEC sa chaîne d'effets (EQ + compresseur), sans limiteur master
+// ni volume de piste. Renvoie l'AudioBuffer rendu (mono). Sert de base aux mesures RMS et LUFS.
+async function renderTrackWithEffectsOffline(track) {
+  let trackDuration = 0;
+  if (track.type === 'voice') {
+    for (const clip of track.clips) {
+      const end = clip.time + (clip.sourceEnd - clip.sourceStart);
+      if (end > trackDuration) trackDuration = end;
+    }
+  } else {
+    for (const ev of track.events) {
+      const end = ev.time + ev.duration;
+      if (end > trackDuration) trackDuration = end;
+    }
+  }
+  if (trackDuration <= 0) return null;
+
+  const sr = state.audioCtx.sampleRate;
+  const offlineCtx = new OfflineAudioContext(1, Math.ceil((trackDuration + 0.2) * sr), sr);
+
+  let chainHead = offlineCtx.destination;
+  if (track.compressed) {
+    const comp = offlineCtx.createDynamicsCompressor();
+    comp.threshold.value = -22; comp.knee.value = 10; comp.ratio.value = 6;
+    comp.attack.value = 0.003; comp.release.value = 0.15;
+    const makeup = offlineCtx.createGain();
+    makeup.gain.value = 1.8;
+    comp.connect(makeup);
+    makeup.connect(chainHead);
+    chainHead = comp;
+  }
+  if (track.eq) {
+    const presetKey = track.eqPreset || 'anti_bocal';
+    const eq = buildEQChainFromPreset(offlineCtx, presetKey);
+    if (eq) {
+      eq.output.connect(chainHead);
+      chainHead = eq.input;
+    }
+  }
+
+  if (track.type === 'voice') {
+    for (const clip of track.clips) {
+      if (clip.muted) continue;
+      const buf = getClipBuffer(clip);
+      if (!buf) continue;
+      const clipDur = clip.sourceEnd - clip.sourceStart;
+      if (clipDur <= 0) continue;
+      const s = offlineCtx.createBufferSource();
+      s.buffer = buf;
+      const g = offlineCtx.createGain();
+      g.gain.value = (clip.volume ?? 1);
+      s.connect(g); g.connect(chainHead);
+      s.start(clip.time, clip.sourceStart, clipDur);
+    }
+  } else {
+    for (const ev of track.events) {
+      if (ev.muted) continue;
+      ensureEventTrim(ev);
+      const buf = state.padBuffers.get(ev.padId);
+      if (!buf) continue;
+      const s = offlineCtx.createBufferSource();
+      s.buffer = buf;
+      const g = offlineCtx.createGain();
+      g.gain.value = (ev.volume ?? 1);
+      s.connect(g); g.connect(chainHead);
+      s.start(ev.time, ev.sourceStart, ev.duration);
+    }
+  }
+  return await offlineCtx.startRendering();
+}
+
+// Mesure le loudness LUFS d'une piste (avec ses effets). Renvoie un nombre en LUFS (négatif) ou -Infinity.
+async function computeTrackLUFS(track) {
+  if (!track) return -Infinity;
+  const rendered = await renderTrackWithEffectsOffline(track);
+  if (!rendered) return -Infinity;
+  return computeLUFSOnActiveZones(rendered, track);
+}
+
 // Actions de normalisation et de compression sur les pistes
 async function normalizeTrack(trackId) {
   const track = findTrack(trackId);
   if (!track) return;
-  // Si la piste a des effets activés (EQ ou compression), faire un rendu offline pour mesurer le RMS réel
-  let rms;
-  if (track.compressed || track.eq) {
-    showStatus('Analyse du signal avec effets…', 'info');
-    try {
-      rms = await computeTrackRMSWithCompression(track);
-    } catch (e) {
-      console.warn('Mesure RMS post-effets échouée, fallback RMS brut', e);
-      rms = computeTrackRMS(track);
-    }
-  } else {
-    rms = computeTrackRMS(track);
+  showStatus('Analyse du loudness (LUFS)…', 'info');
+  let lufs;
+  try {
+    lufs = await computeTrackLUFS(track);
+  } catch (e) {
+    console.warn('Mesure LUFS échouée', e);
+    showStatus("Erreur lors de l'analyse du loudness.", 'error');
+    return;
   }
-  if (rms <= 0) { showStatus("Piste vide ou silencieuse.", 'info'); return; }
-  const gain = normalizationGainFromRMS(rms);
+  if (!isFinite(lufs)) { showStatus("Piste vide ou silencieuse.", 'info'); return; }
+  const gain = gainFromLUFS(lufs);
   track.volume = gain;
   pushHistory();
   renderTimeline();
@@ -5783,7 +6142,7 @@ async function normalizeTrack(trackId) {
   if (track.eq) effects.push('EQ');
   if (track.compressed) effects.push('compression');
   const suffix = effects.length > 0 ? ` (avec ${effects.join(' + ')})` : '';
-  showStatus(`"${track.name}" normalisée (gain ${db > 0 ? '+' : ''}${db} dB)${suffix}`, 'success');
+  showStatus(`"${track.name}" normalisée à ${TARGET_LUFS} LUFS (gain ${db > 0 ? '+' : ''}${db} dB)${suffix}`, 'success');
 }
 
 function toggleTrackCompression(trackId) {
@@ -5928,18 +6287,13 @@ function uncompressAllTracks(includeEvents = false) {
 async function normalizeAllTracks(includeEvents = false) {
   const tracks = getTargetTracksForGlobalAction(includeEvents);
   if (tracks.length === 0) { showStatus("Aucune piste éligible.", 'info'); return; }
-  showStatus(`Normalisation en cours (${tracks.length} piste${tracks.length > 1 ? 's' : ''})…`, 'info');
+  showStatus(`Normalisation LUFS en cours (${tracks.length} piste${tracks.length > 1 ? 's' : ''})…`, 'info');
   let done = 0;
   for (const t of tracks) {
     try {
-      let rms;
-      if (t.compressed || t.eq) {
-        rms = await computeTrackRMSWithCompression(t);
-      } else {
-        rms = computeTrackRMS(t);
-      }
-      if (rms > 0) {
-        t.volume = normalizationGainFromRMS(rms);
+      const lufs = await computeTrackLUFS(t);
+      if (isFinite(lufs)) {
+        t.volume = gainFromLUFS(lufs);
         done++;
       }
     } catch (e) {
@@ -5948,7 +6302,7 @@ async function normalizeAllTracks(includeEvents = false) {
   }
   pushHistory();
   renderTimeline();
-  showStatus(`${done} piste${done > 1 ? 's' : ''} normalisée${done > 1 ? 's' : ''}`, 'success');
+  showStatus(`${done} piste${done > 1 ? 's' : ''} normalisée${done > 1 ? 's' : ''} à ${TARGET_LUFS} LUFS`, 'success');
 }
 
 // Preset "Mix podcast" : normalise et compresse les voix (PAS d'EQ — l'EQ se choisit séparément via les presets)
@@ -5958,13 +6312,13 @@ async function applyMixPreset(includeEvents = false) {
   showStatus(`Mix podcast : traitement de ${tracks.length} piste${tracks.length > 1 ? 's' : ''}…`, 'info');
   // 1. Activer la compression sur toutes les pistes ciblées (l'EQ reste géré séparément)
   for (const t of tracks) { t.compressed = true; }
-  // 2. Normaliser chaque piste (le calcul tiendra compte de la compression et de l'EQ déjà actif si présent)
+  // 2. Normaliser chaque piste au loudness LUFS cible (Spotify -14)
   let done = 0;
   for (const t of tracks) {
     try {
-      const rms = await computeTrackRMSWithCompression(t);
-      if (rms > 0) {
-        t.volume = normalizationGainFromRMS(rms);
+      const lufs = await computeTrackLUFS(t);
+      if (isFinite(lufs)) {
+        t.volume = gainFromLUFS(lufs);
         done++;
       }
     } catch (e) {
@@ -5973,7 +6327,7 @@ async function applyMixPreset(includeEvents = false) {
   }
   pushHistory();
   renderTimeline();
-  showStatus(`✨ Mix podcast appliqué sur ${done} piste${done > 1 ? 's' : ''} (compression + normalisation)`, 'success');
+  showStatus(`✨ Mix podcast appliqué sur ${done} piste${done > 1 ? 's' : ''} (compression + normalisation ${TARGET_LUFS} LUFS)`, 'success');
 }
 
 function normalizeClipOrEvent(id, kind) {
@@ -7589,6 +7943,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     if (state.isRecording) stopRecording();
     else if (state.voiceSelection) { state.voiceSelection = null; renderTimeline(); }
+    else if (state.selection && state.selection.length > 0) { clearSelection(); renderTimeline(); }
     else if (state.playback.active) { stopMixPlayback(); }
     return;
   }
@@ -7605,6 +7960,18 @@ document.addEventListener('keydown', e => {
   }
   if (e.key === 'Delete' || e.key === 'Backspace') {
     if (state.voiceSelection) { applySelectionAction('delete'); return; }
+    // Multi-sélection : supprimer tous les items sélectionnés
+    if (state.selection && state.selection.length > 1) {
+      const items = [...state.selection]; // copie car on va modifier le modèle
+      for (const s of items) {
+        if (s.kind === 'event') deleteEvent(s.id, { skipRender: true });
+        else if (s.kind === 'voice') removeVoiceClip(s.id, { skipRender: true });
+      }
+      clearSelection();
+      pushHistory();
+      renderTimeline();
+      return;
+    }
     if (state.selectedKind && state.selectedId) {
       if (state.selectedKind === 'event') deleteEvent(state.selectedId);
       else if (state.selectedKind === 'voice') removeVoiceClip(state.selectedId);
