@@ -4871,6 +4871,43 @@ function timelineBackgroundClick(e) {
 }
 document.getElementById('timelineContainer').addEventListener('click', timelineBackgroundClick);
 
+// Reconstruit la chaîne EQ dans un slot existant, à chaud, sans interrompre la lecture.
+// Déconnecte les anciens nodes EQ et branche la nouvelle chaîne entre inputGain et outputGain.
+function rebuildEqInSlot(ctx, slot, presetKey) {
+  // Déconnecter les anciens
+  for (const n of slot.currentEqNodes) {
+    try { n.disconnect(); } catch (e) {}
+  }
+  slot.currentEqNodes = [];
+  // Déconnecter inputGain de quoi que ce soit (anciens nodes ou outputGain direct)
+  try { slot.inputGain.disconnect(); } catch (e) {}
+
+  const eq = buildEQChainFromPreset(ctx, presetKey);
+  if (eq) {
+    // Brancher : inputGain → eq.input → ... → eq.output → outputGain
+    slot.inputGain.connect(eq.input);
+    eq.output.connect(slot.outputGain);
+    // Garder une trace pour pouvoir disconnect au prochain swap
+    // On ne connaît pas la liste interne ; on stocke input et output (suffisant)
+    slot.currentEqNodes = [eq.input, eq.output];
+  } else {
+    // Pas d'EQ : inputGain → outputGain en direct (bypass)
+    slot.inputGain.connect(slot.outputGain);
+  }
+}
+
+// Applique l'EQ courant à toutes les pistes en cours de lecture (changement de preset à chaud)
+function updateLiveEqOnAllTracks() {
+  if (!state.playback.active || !state.playback.trackEqSlots || !state.take) return;
+  const presetKey = state.take.eqPreset || 'anti_bocal';
+  for (const track of state.take.tracks) {
+    const slot = state.playback.trackEqSlots.get(track.id);
+    if (!slot) continue;
+    const key = track.eq ? presetKey : 'none';
+    rebuildEqInSlot(state.audioCtx, slot, key);
+  }
+}
+
 // Met à jour visuellement une piste comme étant mute/inaudible (CSS uniquement, pas de re-render).
 // `audible` est recalculé en tenant compte du contexte solo global.
 function updateTrackMutedVisual(track) {
@@ -5330,6 +5367,8 @@ document.querySelectorAll('.eq-preset-btn').forEach(btn => {
     } else {
       for (const t of tracks) t.eq = true;
     }
+    // Si la lecture tourne, appliquer le nouveau preset à chaud (sans Stop/Play)
+    updateLiveEqOnAllTracks();
     pushHistory();
     renderTimeline();
     updateEqPresetVisualState();
@@ -5443,52 +5482,55 @@ const EQ_PRESETS = {
     description: 'Atténue la résonance "boîte/tube" des pièces non traitées',
     filters: [
       { type: 'highpass', freq: 100, Q: 0.707 },
-      { type: 'peaking', freq: 300, Q: 1.0, gain: -5 },
-      { type: 'peaking', freq: 500, Q: 1.0, gain: -5 },
+      { type: 'peaking', freq: 300, Q: 1.0, gain: -7 },
+      { type: 'peaking', freq: 500, Q: 1.0, gain: -7 },
     ]
   },
   voix_chaude: {
     label: 'Voix chaude',
     description: 'Voix narrative riche et ronde, pour fictions et podcasts intimes',
     filters: [
-      { type: 'highpass', freq: 70, Q: 0.707 },
-      { type: 'peaking', freq: 200, Q: 0.8, gain: 3 },
-      { type: 'peaking', freq: 500, Q: 1.0, gain: -4 },
-      { type: 'peaking', freq: 2500, Q: 0.9, gain: 3 },
-      { type: 'peaking', freq: 7000, Q: 2.0, gain: -2 },
+      { type: 'highpass', freq: 60, Q: 0.707 },
+      { type: 'peaking', freq: 200, Q: 0.8, gain: 5 },
+      { type: 'peaking', freq: 500, Q: 1.0, gain: -5 },
+      { type: 'peaking', freq: 2500, Q: 0.9, gain: 4 },
+      { type: 'peaking', freq: 6500, Q: 1.5, gain: -4 },
+      { type: 'highshelf', freq: 10000, gain: -2 },
     ]
   },
   voix_claire: {
     label: 'Voix claire',
     description: 'Voix nette et intelligible, pour interviews et échanges',
     filters: [
-      { type: 'highpass', freq: 100, Q: 0.707 },
-      { type: 'peaking', freq: 350, Q: 1.0, gain: -4 },
-      { type: 'peaking', freq: 800, Q: 1.5, gain: -2 },
-      { type: 'peaking', freq: 3500, Q: 0.9, gain: 5 },
-      { type: 'peaking', freq: 7000, Q: 2.0, gain: -3 },
+      { type: 'highpass', freq: 110, Q: 0.707 },
+      { type: 'peaking', freq: 350, Q: 1.0, gain: -6 },
+      { type: 'peaking', freq: 800, Q: 1.5, gain: -3 },
+      { type: 'peaking', freq: 3500, Q: 0.9, gain: 7 },
+      { type: 'peaking', freq: 7000, Q: 2.0, gain: -4 },
+      { type: 'highshelf', freq: 9000, gain: 3 },
     ]
   },
   fm_radio: {
     label: 'FM radio',
     description: 'Voix dense et présente façon station commerciale',
     filters: [
-      { type: 'highpass', freq: 110, Q: 0.707 },
-      { type: 'peaking', freq: 300, Q: 1.0, gain: -5 },
-      { type: 'peaking', freq: 800, Q: 1.5, gain: -3 },
-      { type: 'peaking', freq: 4000, Q: 0.9, gain: 6 },
-      { type: 'peaking', freq: 7000, Q: 2.0, gain: -4 },
-      { type: 'highshelf', freq: 10000, gain: 5 },
+      { type: 'highpass', freq: 120, Q: 0.707 },
+      { type: 'peaking', freq: 250, Q: 1.0, gain: -7 },
+      { type: 'peaking', freq: 800, Q: 1.5, gain: -4 },
+      { type: 'peaking', freq: 4000, Q: 0.9, gain: 8 },
+      { type: 'peaking', freq: 7000, Q: 2.0, gain: -5 },
+      { type: 'highshelf', freq: 10000, gain: 7 },
     ]
   },
   voix_brillante: {
     label: 'Voix brillante',
     description: 'Pour voix sombres/feutrées qui manquent d\'aigus',
     filters: [
-      { type: 'highpass', freq: 90, Q: 0.707 },
-      { type: 'peaking', freq: 3500, Q: 0.9, gain: 6 },
-      { type: 'peaking', freq: 7000, Q: 2.0, gain: -3 },
-      { type: 'highshelf', freq: 9000, gain: 7 },
+      { type: 'highpass', freq: 100, Q: 0.707 },
+      { type: 'peaking', freq: 500, Q: 1.0, gain: -3 },
+      { type: 'peaking', freq: 3500, Q: 0.9, gain: 8 },
+      { type: 'peaking', freq: 7000, Q: 2.0, gain: -4 },
+      { type: 'highshelf', freq: 9000, gain: 9 },
     ]
   }
 };
@@ -5886,16 +5928,15 @@ function playMix(opts = {}) {
   masterLim.connect(ctx.destination);
   state.playback.masterLimiter = masterLim;
 
-  // Map trackId → GainNode pour pouvoir muter/désolo dynamiquement pendant la lecture
+  // Maps pour pouvoir modifier dynamiquement la chaîne pendant la lecture
   state.playback.trackGains = new Map();
+  state.playback.trackEqSlots = new Map(); // trackId → { inputGain, outputGain, currentEqNodes }
 
   // Identifier les pistes solo : si au moins une piste est solo, seules celles-là sont audibles
   const anySolo = state.take.tracks.some(t => t.solo);
 
   for (const track of state.take.tracks) {
     const trackVol = track.volume ?? 1;
-    // Préparer le nœud de sortie de cette piste : trackGain → EQ → compresseur → master
-    // Le trackGain contrôle l'audibilité dynamique (mute/solo) sans devoir rerouter
     const trackGain = ctx.createGain();
     const audible = track.muted ? false : (anySolo ? !!track.solo : true);
     trackGain.gain.value = audible ? 1 : 0;
@@ -5908,12 +5949,17 @@ function playMix(opts = {}) {
       chainTail = comp.input;
       state.playback.sources.push(comp.input, comp.output);
     }
-    if (track.eq) {
-      const eq = createVoiceEQ(ctx);
-      eq.output.connect(chainTail);
-      chainTail = eq.input;
-      state.playback.sources.push(eq.input, eq.output);
-    }
+    // EQ slot : 2 gains qui encadrent une chaîne d'EQ remplaçable à chaud
+    const eqInSlot = ctx.createGain();
+    const eqOutSlot = ctx.createGain();
+    eqOutSlot.connect(chainTail);
+    const slot = { inputGain: eqInSlot, outputGain: eqOutSlot, currentEqNodes: [] };
+    state.playback.trackEqSlots.set(track.id, slot);
+    // Brancher l'EQ initial dans le slot
+    rebuildEqInSlot(ctx, slot, track.eq ? ((state.take && state.take.eqPreset) || 'anti_bocal') : 'none');
+    chainTail = eqInSlot;
+    state.playback.sources.push(eqInSlot, eqOutSlot);
+
     trackGain.connect(chainTail);
     state.playback.sources.push(trackGain);
     const trackOut = trackGain;
