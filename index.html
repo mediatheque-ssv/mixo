@@ -1578,7 +1578,6 @@
         <button class="menu-item eq-preset-btn" data-eq-preset="voix_claire">Voix claire</button>
         <button class="menu-item eq-preset-btn" data-eq-preset="fm_radio">FM radio</button>
         <button class="menu-item eq-preset-btn" data-eq-preset="voix_brillante">Voix brillante</button>
-        <button class="menu-item eq-preset-btn" data-eq-preset="test_extreme" style="color:#f87171">⚠ TEST extrême</button>
         <div class="menu-separator"></div>
         <button id="btnCompressAllVoices" class="menu-item">Compresser toutes les voix</button>
         <button id="btnUncompressAllVoices" class="menu-item">Désactiver la compression</button>
@@ -5320,14 +5319,12 @@ document.getElementById('btnCompressAllVoices').addEventListener('click', () => 
 // Boutons de preset EQ : applique le preset au projet et active l'EQ sur toutes les pistes voix
 document.querySelectorAll('.eq-preset-btn').forEach(btn => {
   btn.addEventListener('click', () => {
-    console.log('[EQ preset] click ->', btn.dataset.eqPreset);
     closeMixMenu();
-    if (!state.take) { console.warn('[EQ preset] state.take is null'); return; }
+    if (!state.take) return;
     const preset = btn.dataset.eqPreset;
     state.take.eqPreset = preset;
     const inc = document.getElementById('mixIncludeEvents').checked;
     const tracks = getTargetTracksForGlobalAction(inc);
-    console.log('[EQ preset] preset stored:', state.take.eqPreset, 'tracks:', tracks.length);
     if (preset === 'none') {
       for (const t of tracks) t.eq = false;
     } else {
@@ -5445,9 +5442,9 @@ const EQ_PRESETS = {
     label: 'Anti-bocal',
     description: 'Atténue la résonance "boîte/tube" des pièces non traitées',
     filters: [
-      { type: 'highpass', freq: 90, Q: 0.707 },
-      { type: 'peaking', freq: 300, Q: 1.0, gain: -3 },
-      { type: 'peaking', freq: 450, Q: 1.0, gain: -3 },
+      { type: 'highpass', freq: 100, Q: 0.707 },
+      { type: 'peaking', freq: 300, Q: 1.0, gain: -5 },
+      { type: 'peaking', freq: 500, Q: 1.0, gain: -5 },
     ]
   },
   voix_chaude: {
@@ -5455,9 +5452,10 @@ const EQ_PRESETS = {
     description: 'Voix narrative riche et ronde, pour fictions et podcasts intimes',
     filters: [
       { type: 'highpass', freq: 70, Q: 0.707 },
-      { type: 'peaking', freq: 200, Q: 0.8, gain: 1.5 },
-      { type: 'peaking', freq: 500, Q: 1.0, gain: -2 },
-      { type: 'peaking', freq: 3000, Q: 0.9, gain: 1.5 },
+      { type: 'peaking', freq: 200, Q: 0.8, gain: 3 },
+      { type: 'peaking', freq: 500, Q: 1.0, gain: -4 },
+      { type: 'peaking', freq: 2500, Q: 0.9, gain: 3 },
+      { type: 'peaking', freq: 7000, Q: 2.0, gain: -2 },
     ]
   },
   voix_claire: {
@@ -5465,9 +5463,10 @@ const EQ_PRESETS = {
     description: 'Voix nette et intelligible, pour interviews et échanges',
     filters: [
       { type: 'highpass', freq: 100, Q: 0.707 },
-      { type: 'peaking', freq: 350, Q: 1.0, gain: -2 },
-      { type: 'peaking', freq: 3000, Q: 0.9, gain: 2.5 },
-      { type: 'peaking', freq: 7000, Q: 2.0, gain: -2 },
+      { type: 'peaking', freq: 350, Q: 1.0, gain: -4 },
+      { type: 'peaking', freq: 800, Q: 1.5, gain: -2 },
+      { type: 'peaking', freq: 3500, Q: 0.9, gain: 5 },
+      { type: 'peaking', freq: 7000, Q: 2.0, gain: -3 },
     ]
   },
   fm_radio: {
@@ -5475,11 +5474,11 @@ const EQ_PRESETS = {
     description: 'Voix dense et présente façon station commerciale',
     filters: [
       { type: 'highpass', freq: 110, Q: 0.707 },
-      { type: 'peaking', freq: 300, Q: 1.0, gain: -3 },
-      { type: 'peaking', freq: 800, Q: 1.5, gain: -1.5 },
-      { type: 'peaking', freq: 4000, Q: 0.9, gain: 4 },
-      { type: 'peaking', freq: 7000, Q: 2.0, gain: -3 },
-      { type: 'highshelf', freq: 10000, gain: 3 },
+      { type: 'peaking', freq: 300, Q: 1.0, gain: -5 },
+      { type: 'peaking', freq: 800, Q: 1.5, gain: -3 },
+      { type: 'peaking', freq: 4000, Q: 0.9, gain: 6 },
+      { type: 'peaking', freq: 7000, Q: 2.0, gain: -4 },
+      { type: 'highshelf', freq: 10000, gain: 5 },
     ]
   },
   voix_brillante: {
@@ -5487,18 +5486,9 @@ const EQ_PRESETS = {
     description: 'Pour voix sombres/feutrées qui manquent d\'aigus',
     filters: [
       { type: 'highpass', freq: 90, Q: 0.707 },
-      { type: 'peaking', freq: 3500, Q: 0.9, gain: 3 },
-      { type: 'peaking', freq: 7000, Q: 2.0, gain: -2 },
-      { type: 'highshelf', freq: 9000, gain: 4 },
-    ]
-  },
-  test_extreme: {
-    label: '⚠ TEST extrême',
-    description: 'Preset de test : si tu ne perçois pas celui-ci, il y a un bug',
-    filters: [
-      { type: 'highpass', freq: 400, Q: 0.707 },
-      { type: 'peaking', freq: 1000, Q: 1.0, gain: -20 },
-      { type: 'peaking', freq: 6000, Q: 0.9, gain: 18 },
+      { type: 'peaking', freq: 3500, Q: 0.9, gain: 6 },
+      { type: 'peaking', freq: 7000, Q: 2.0, gain: -3 },
+      { type: 'highshelf', freq: 9000, gain: 7 },
     ]
   }
 };
