@@ -5319,17 +5319,17 @@ document.getElementById('btnCompressAllVoices').addEventListener('click', () => 
 // Boutons de preset EQ : applique le preset au projet et active l'EQ sur toutes les pistes voix
 document.querySelectorAll('.eq-preset-btn').forEach(btn => {
   btn.addEventListener('click', () => {
+    console.log('[EQ preset] click ->', btn.dataset.eqPreset);
     closeMixMenu();
-    if (!state.take) return;
+    if (!state.take) { console.warn('[EQ preset] state.take is null'); return; }
     const preset = btn.dataset.eqPreset;
     state.take.eqPreset = preset;
     const inc = document.getElementById('mixIncludeEvents').checked;
     const tracks = getTargetTracksForGlobalAction(inc);
-    // Si preset "none", désactiver l'EQ sur toutes les pistes
+    console.log('[EQ preset] preset stored:', state.take.eqPreset, 'tracks:', tracks.length);
     if (preset === 'none') {
       for (const t of tracks) t.eq = false;
     } else {
-      // Sinon, activer l'EQ sur toutes les pistes (le rendu utilisera le preset actif)
       for (const t of tracks) t.eq = true;
     }
     pushHistory();
