@@ -1578,6 +1578,7 @@
         <button class="menu-item eq-preset-btn" data-eq-preset="voix_claire">Voix claire</button>
         <button class="menu-item eq-preset-btn" data-eq-preset="fm_radio">FM radio</button>
         <button class="menu-item eq-preset-btn" data-eq-preset="voix_brillante">Voix brillante</button>
+        <button class="menu-item eq-preset-btn" data-eq-preset="test_extreme" style="color:#f87171">⚠ TEST extrême</button>
         <div class="menu-separator"></div>
         <button id="btnCompressAllVoices" class="menu-item">Compresser toutes les voix</button>
         <button id="btnUncompressAllVoices" class="menu-item">Désactiver la compression</button>
@@ -5489,6 +5490,15 @@ const EQ_PRESETS = {
       { type: 'peaking', freq: 3500, Q: 0.9, gain: 3 },
       { type: 'peaking', freq: 7000, Q: 2.0, gain: -2 },
       { type: 'highshelf', freq: 9000, gain: 4 },
+    ]
+  },
+  test_extreme: {
+    label: '⚠ TEST extrême',
+    description: 'Preset de test : si tu ne perçois pas celui-ci, il y a un bug',
+    filters: [
+      { type: 'highpass', freq: 400, Q: 0.707 },
+      { type: 'peaking', freq: 1000, Q: 1.0, gain: -20 },
+      { type: 'peaking', freq: 6000, Q: 0.9, gain: 18 },
     ]
   }
 };
