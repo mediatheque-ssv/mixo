@@ -655,6 +655,24 @@
   .bank-menu-dropdown .menu-item:hover { background: rgba(212,175,55,0.12); color: var(--brass); }
   .bank-menu-dropdown .menu-item:disabled { opacity: 0.4; cursor: not-allowed; }
   .menu-separator { height: 1px; background: var(--border-soft); margin: 4px 0; }
+  .menu-item-section {
+    font-size: 10px !important;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-dim) !important;
+    padding: 6px 10px 2px !important;
+    cursor: default !important;
+    pointer-events: none;
+    font-weight: 600;
+  }
+  .eq-preset-btn.active {
+    background: rgba(212,175,55,0.15) !important;
+    color: var(--brass) !important;
+    font-weight: 600;
+  }
+  .eq-preset-btn.active::before {
+    content: "✓ ";
+  }
   .pad.project-pad .pad-actions { right: 38px; }
 
   /* === ÉDITEUR === */
@@ -1551,10 +1569,16 @@
     <div class="mix-menu-wrapper">
       <button id="btnMixVoices" title="Traitement global des voix" aria-haspopup="true">Mixage voix ▾</button>
       <div id="mixVoicesDropdown" class="bank-menu-dropdown" hidden>
-        <button id="btnMixPreset" class="menu-item" style="font-weight:700;color:var(--brass)">Mix podcast (EQ + compresser + normaliser)</button>
+        <button id="btnMixPreset" class="menu-item" style="font-weight:700;color:var(--brass)">Mix podcast (normaliser + compresser)</button>
         <div class="menu-separator"></div>
-        <button id="btnEqAllVoices" class="menu-item">Activer EQ sur toutes les voix</button>
-        <button id="btnUneqAllVoices" class="menu-item">Désactiver l'EQ</button>
+        <div class="menu-item menu-item-section">EQ — choisir un preset :</div>
+        <button class="menu-item eq-preset-btn" data-eq-preset="none">Aucun EQ</button>
+        <button class="menu-item eq-preset-btn" data-eq-preset="anti_bocal">Anti-bocal</button>
+        <button class="menu-item eq-preset-btn" data-eq-preset="voix_chaude">Voix chaude</button>
+        <button class="menu-item eq-preset-btn" data-eq-preset="voix_claire">Voix claire</button>
+        <button class="menu-item eq-preset-btn" data-eq-preset="fm_radio">FM radio</button>
+        <button class="menu-item eq-preset-btn" data-eq-preset="voix_brillante">Voix brillante</button>
+        <div class="menu-separator"></div>
         <button id="btnCompressAllVoices" class="menu-item">Compresser toutes les voix</button>
         <button id="btnUncompressAllVoices" class="menu-item">Désactiver la compression</button>
         <button id="btnNormalizeAllVoices" class="menu-item">Normaliser toutes les voix</button>
@@ -1765,7 +1789,7 @@
       1. <strong>Enregistre</strong> ta voix en déclenchant les pads pendant la prise — ou <strong>importe un audio existant</strong> (bouton ou glisse-dépose).<br>
       2. À chaque enregistrement, Mixo crée une piste <strong>Voix</strong> + une piste <strong>Bruitages</strong> liées (même couleur). Lance des prises supplémentaires (overdub) pour superposer.<br>
       3. Dans l'éditeur, glisse les pads dans la timeline pour en ajouter, sélectionne des zones de voix, scinde, repositionne, rogne les bords.<br>
-      4. <strong>Mixage voix ▾ → Mix podcast</strong> applique EQ + compression + normalisation broadcast en un clic.<br>
+      4. <strong>Mixage voix ▾ → Mix podcast</strong> compresse et normalise toutes les voix. <strong>Choisis un preset EQ</strong> dans le même menu pour ajuster le timbre.<br>
       5. <strong>Sauvegarde le projet</strong> (.mixo) pour y revenir plus tard, ou exporte directement en MP3 192 kbps.
     </div>
     <div class="modal-actions">
@@ -2022,15 +2046,33 @@ function snapSelectedToNeighbor(direction) {
 
   let newTime;
   if (direction > 0) {
-    // Vers la droite : on cherche le 1er voisin dont la fin est strictement après notre fin actuelle.
-    // On colle notre début à sa fin.
+    // Vers la droite : on cherche le voisin de droite le plus proche dont le DÉBUT est >= notre fin actuelle.
+    // On colle notre FIN à son DÉBUT.
     let target = null;
     for (const x of others) {
-      const xEnd = x.time + getItemDuration(x, track);
-      if (xEnd > currentEnd + 0.001) { target = x; break; }
+      if (x.time >= currentEnd - 0.001 && x.time > currentStart) {
+        target = x; break;
+      }
     }
     if (target) {
-      newTime = target.time + getItemDuration(target, track);
+      // Si je suis déjà collé à ce voisin, viser le voisin suivant
+      if (target.time <= currentEnd + 0.001) {
+        let target2 = null;
+        for (const x of others) {
+          if (x.time > target.time + 0.001) {
+            const xStart = x.time;
+            const targetEnd = target.time + getItemDuration(target, track);
+            if (xStart >= targetEnd - 0.001) { target2 = x; break; }
+          }
+        }
+        if (target2) {
+          newTime = target2.time - duration;
+        } else {
+          newTime = Math.max(0, state.take.duration - duration);
+        }
+      } else {
+        newTime = target.time - duration;
+      }
     } else {
       // Pas de voisin à droite : aligner à la fin de la timeline (sans dépasser)
       newTime = Math.max(0, state.take.duration - duration);
@@ -5254,6 +5296,9 @@ document.getElementById('btnMixVoices').addEventListener('click', e => {
   e.stopPropagation();
   const dd = document.getElementById('mixVoicesDropdown');
   dd.hidden = !dd.hidden;
+  if (!dd.hidden && typeof updateEqPresetVisualState === 'function') {
+    updateEqPresetVisualState();
+  }
 });
 document.addEventListener('click', e => {
   const dd = document.getElementById('mixVoicesDropdown');
@@ -5271,16 +5316,40 @@ document.getElementById('btnCompressAllVoices').addEventListener('click', () => 
   const inc = document.getElementById('mixIncludeEvents').checked;
   compressAllTracks(inc);
 });
-document.getElementById('btnEqAllVoices').addEventListener('click', () => {
-  closeMixMenu();
-  const inc = document.getElementById('mixIncludeEvents').checked;
-  eqAllTracks(inc);
+// Boutons de preset EQ : applique le preset au projet et active l'EQ sur toutes les pistes voix
+document.querySelectorAll('.eq-preset-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    closeMixMenu();
+    if (!state.take) return;
+    const preset = btn.dataset.eqPreset;
+    state.take.eqPreset = preset;
+    const inc = document.getElementById('mixIncludeEvents').checked;
+    const tracks = getTargetTracksForGlobalAction(inc);
+    // Si preset "none", désactiver l'EQ sur toutes les pistes
+    if (preset === 'none') {
+      for (const t of tracks) t.eq = false;
+    } else {
+      // Sinon, activer l'EQ sur toutes les pistes (le rendu utilisera le preset actif)
+      for (const t of tracks) t.eq = true;
+    }
+    pushHistory();
+    renderTimeline();
+    updateEqPresetVisualState();
+    const label = EQ_PRESETS[preset] ? EQ_PRESETS[preset].label : preset;
+    showStatus(`EQ : « ${label} » appliqué sur ${tracks.length} piste${tracks.length > 1 ? 's' : ''}`, 'success');
+  });
 });
-document.getElementById('btnUneqAllVoices').addEventListener('click', () => {
-  closeMixMenu();
-  const inc = document.getElementById('mixIncludeEvents').checked;
-  uneqAllTracks(inc);
-});
+
+// Met à jour le check ✓ sur le preset actif dans le menu
+function updateEqPresetVisualState() {
+  const current = (state.take && state.take.eqPreset) || 'anti_bocal';
+  // Si aucune piste n'a l'EQ activé, on considère le preset comme "none"
+  const anyEqOn = state.take && state.take.tracks.some(t => t.eq);
+  const displayed = anyEqOn ? current : 'none';
+  document.querySelectorAll('.eq-preset-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.eqPreset === displayed);
+  });
+}
 document.getElementById('btnUncompressAllVoices').addEventListener('click', () => {
   closeMixMenu();
   const inc = document.getElementById('mixIncludeEvents').checked;
@@ -5364,50 +5433,92 @@ function createVoiceCompressor(ctx) {
 // 1. Passe-haut à 80 Hz : enlève grondements, vibrations basses du micro, pollutions de fond
 // 2. Boost léger à 3 kHz : ajoute de la clarté, intelligibilité des consonnes
 // Retourne { input, output } pour brancher en série dans la chaîne audio.
+// Définitions des presets EQ : chaque preset = liste de filtres biquads.
+// Chaque filtre : { type: 'highpass'|'peaking'|'highshelf', freq, Q (peaking/highpass), gain (peaking/shelf) }
+const EQ_PRESETS = {
+  none: {
+    label: 'Aucun EQ',
+    filters: []
+  },
+  anti_bocal: {
+    label: 'Anti-bocal',
+    description: 'Atténue la résonance "boîte/tube" des pièces non traitées',
+    filters: [
+      { type: 'highpass', freq: 90, Q: 0.707 },
+      { type: 'peaking', freq: 300, Q: 1.0, gain: -3 },
+      { type: 'peaking', freq: 450, Q: 1.0, gain: -3 },
+    ]
+  },
+  voix_chaude: {
+    label: 'Voix chaude',
+    description: 'Voix narrative riche et ronde, pour fictions et podcasts intimes',
+    filters: [
+      { type: 'highpass', freq: 70, Q: 0.707 },
+      { type: 'peaking', freq: 200, Q: 0.8, gain: 1.5 },
+      { type: 'peaking', freq: 500, Q: 1.0, gain: -2 },
+      { type: 'peaking', freq: 3000, Q: 0.9, gain: 1.5 },
+    ]
+  },
+  voix_claire: {
+    label: 'Voix claire',
+    description: 'Voix nette et intelligible, pour interviews et échanges',
+    filters: [
+      { type: 'highpass', freq: 100, Q: 0.707 },
+      { type: 'peaking', freq: 350, Q: 1.0, gain: -2 },
+      { type: 'peaking', freq: 3000, Q: 0.9, gain: 2.5 },
+      { type: 'peaking', freq: 7000, Q: 2.0, gain: -2 },
+    ]
+  },
+  fm_radio: {
+    label: 'FM radio',
+    description: 'Voix dense et présente façon station commerciale',
+    filters: [
+      { type: 'highpass', freq: 110, Q: 0.707 },
+      { type: 'peaking', freq: 300, Q: 1.0, gain: -3 },
+      { type: 'peaking', freq: 800, Q: 1.5, gain: -1.5 },
+      { type: 'peaking', freq: 4000, Q: 0.9, gain: 4 },
+      { type: 'peaking', freq: 7000, Q: 2.0, gain: -3 },
+      { type: 'highshelf', freq: 10000, gain: 3 },
+    ]
+  },
+  voix_brillante: {
+    label: 'Voix brillante',
+    description: 'Pour voix sombres/feutrées qui manquent d\'aigus',
+    filters: [
+      { type: 'highpass', freq: 90, Q: 0.707 },
+      { type: 'peaking', freq: 3500, Q: 0.9, gain: 3 },
+      { type: 'peaking', freq: 7000, Q: 2.0, gain: -2 },
+      { type: 'highshelf', freq: 9000, gain: 4 },
+    ]
+  }
+};
+
+// Construit une chaîne de filtres à partir d'un preset, dans n'importe quel AudioContext (live ou offline).
+// Retourne { input, output } ou null si preset vide / "none".
+function buildEQChainFromPreset(ctx, presetKey) {
+  const preset = EQ_PRESETS[presetKey];
+  if (!preset || !preset.filters || preset.filters.length === 0) return null;
+  const nodes = preset.filters.map(f => {
+    const b = ctx.createBiquadFilter();
+    b.type = f.type;
+    b.frequency.value = f.freq;
+    if (f.Q != null) b.Q.value = f.Q;
+    if (f.gain != null) b.gain.value = f.gain;
+    return b;
+  });
+  for (let i = 0; i < nodes.length - 1; i++) nodes[i].connect(nodes[i + 1]);
+  return { input: nodes[0], output: nodes[nodes.length - 1] };
+}
+
 function createVoiceEQ(ctx) {
-  // EQ "France Inter" : rendu chaud, voix riche, peu de traitement agressif.
-  // Préserve les graves et bas-médiums pour la chaleur, traite légèrement le bocal sans le tuer,
-  // pas de boost de présence ni d'air (qui rendraient la voix "rock"/agressive).
-
-  // Passe-haut très bas à 90 Hz : préserve toutes les fondamentales, coupe juste le rumble
-  const hp = ctx.createBiquadFilter();
-  hp.type = 'highpass';
-  hp.frequency.value = 90;
-  hp.Q.value = 0.707;
-
-  // Anti-bocal doux à 350 Hz : mate la résonance de pièce sans amincir la voix
-  const antiBocal = ctx.createBiquadFilter();
-  antiBocal.type = 'peaking';
-  antiBocal.frequency.value = 350;
-  antiBocal.Q.value = 1.0;
-  antiBocal.gain.value = -4;
-
-  // Léger anti-nasal à 800 Hz
-  const antiNasal = ctx.createBiquadFilter();
-  antiNasal.type = 'peaking';
-  antiNasal.frequency.value = 800;
-  antiNasal.Q.value = 1.5;
-  antiNasal.gain.value = -2;
-
-  // Mini boost médium à 1.5 kHz : donne de la corpulence à la voix sans la rendre criarde
-  const corps = ctx.createBiquadFilter();
-  corps.type = 'peaking';
-  corps.frequency.value = 1500;
-  corps.Q.value = 1.0;
-  corps.gain.value = 1.5;
-
-  // De-esser à 7 kHz : essentiel pour éviter les sibilantes (les voix radio en sont systématiquement débarrassées)
-  const deEss = ctx.createBiquadFilter();
-  deEss.type = 'peaking';
-  deEss.frequency.value = 7000;
-  deEss.Q.value = 2.0;
-  deEss.gain.value = -3;
-
-  hp.connect(antiBocal);
-  antiBocal.connect(antiNasal);
-  antiNasal.connect(corps);
-  corps.connect(deEss);
-  return { input: hp, output: deEss };
+  // Utilise le preset actif du projet, par défaut "france_inter"
+  const presetKey = (state.take && state.take.eqPreset) || 'anti_bocal';
+  return buildEQChainFromPreset(ctx, presetKey) || (function() {
+    // Si "none", on renvoie un pass-through (un gain unitaire qui ne change rien)
+    const g = ctx.createGain();
+    g.gain.value = 1;
+    return { input: g, output: g };
+  })();
 }
 
 // Calcule le RMS global d'une piste (moyenne pondérée des RMS des clips/events)
@@ -5481,19 +5592,12 @@ async function computeTrackRMSWithCompression(track) {
     chainHead = comp;
   }
   if (track.eq) {
-    const hp = offlineCtx.createBiquadFilter();
-    hp.type = 'highpass'; hp.frequency.value = 90; hp.Q.value = 0.707;
-    const antiBocal = offlineCtx.createBiquadFilter();
-    antiBocal.type = 'peaking'; antiBocal.frequency.value = 350; antiBocal.Q.value = 1.0; antiBocal.gain.value = -4;
-    const antiNasal = offlineCtx.createBiquadFilter();
-    antiNasal.type = 'peaking'; antiNasal.frequency.value = 800; antiNasal.Q.value = 1.5; antiNasal.gain.value = -2;
-    const corps = offlineCtx.createBiquadFilter();
-    corps.type = 'peaking'; corps.frequency.value = 1500; corps.Q.value = 1.0; corps.gain.value = 1.5;
-    const deEss = offlineCtx.createBiquadFilter();
-    deEss.type = 'peaking'; deEss.frequency.value = 7000; deEss.Q.value = 2.0; deEss.gain.value = -3;
-    hp.connect(antiBocal); antiBocal.connect(antiNasal); antiNasal.connect(corps); corps.connect(deEss);
-    deEss.connect(chainHead);
-    chainHead = hp;
+    const presetKey = (state.take && state.take.eqPreset) || 'anti_bocal';
+    const eq = buildEQChainFromPreset(offlineCtx, presetKey);
+    if (eq) {
+      eq.output.connect(chainHead);
+      chainHead = eq.input;
+    }
   }
 
   if (track.type === 'voice') {
@@ -5704,14 +5808,14 @@ async function normalizeAllTracks(includeEvents = false) {
   showStatus(`${done} piste${done > 1 ? 's' : ''} normalisée${done > 1 ? 's' : ''}`, 'success');
 }
 
-// Preset "Mix podcast" : active EQ + compression puis normalise toutes les voix (et optionnellement bruitages)
+// Preset "Mix podcast" : normalise et compresse les voix (PAS d'EQ — l'EQ se choisit séparément via les presets)
 async function applyMixPreset(includeEvents = false) {
   const tracks = getTargetTracksForGlobalAction(includeEvents);
   if (tracks.length === 0) { showStatus("Aucune piste éligible.", 'info'); return; }
   showStatus(`Mix podcast : traitement de ${tracks.length} piste${tracks.length > 1 ? 's' : ''}…`, 'info');
-  // 1. Activer EQ et compression sur toutes les pistes ciblées
-  for (const t of tracks) { t.eq = true; t.compressed = true; }
-  // 2. Normaliser chaque piste (le calcul tiendra compte des effets activés)
+  // 1. Activer la compression sur toutes les pistes ciblées (l'EQ reste géré séparément)
+  for (const t of tracks) { t.compressed = true; }
+  // 2. Normaliser chaque piste (le calcul tiendra compte de la compression et de l'EQ déjà actif si présent)
   let done = 0;
   for (const t of tracks) {
     try {
@@ -5726,7 +5830,7 @@ async function applyMixPreset(includeEvents = false) {
   }
   pushHistory();
   renderTimeline();
-  showStatus(`✨ Mix podcast appliqué sur ${done} piste${done > 1 ? 's' : ''} (EQ + compression + normalisation)`, 'success');
+  showStatus(`✨ Mix podcast appliqué sur ${done} piste${done > 1 ? 's' : ''} (compression + normalisation)`, 'success');
 }
 
 function normalizeClipOrEvent(id, kind) {
@@ -6060,19 +6164,12 @@ async function exportMix() {
         trackOut = comp;
       }
       if (track.eq) {
-        const hp = offlineCtx.createBiquadFilter();
-        hp.type = 'highpass'; hp.frequency.value = 90; hp.Q.value = 0.707;
-        const antiBocal = offlineCtx.createBiquadFilter();
-        antiBocal.type = 'peaking'; antiBocal.frequency.value = 350; antiBocal.Q.value = 1.0; antiBocal.gain.value = -4;
-        const antiNasal = offlineCtx.createBiquadFilter();
-        antiNasal.type = 'peaking'; antiNasal.frequency.value = 800; antiNasal.Q.value = 1.5; antiNasal.gain.value = -2;
-        const corps = offlineCtx.createBiquadFilter();
-        corps.type = 'peaking'; corps.frequency.value = 1500; corps.Q.value = 1.0; corps.gain.value = 1.5;
-        const deEss = offlineCtx.createBiquadFilter();
-        deEss.type = 'peaking'; deEss.frequency.value = 7000; deEss.Q.value = 2.0; deEss.gain.value = -3;
-        hp.connect(antiBocal); antiBocal.connect(antiNasal); antiNasal.connect(corps); corps.connect(deEss);
-        deEss.connect(trackOut);
-        trackOut = hp;
+        const presetKey = (state.take && state.take.eqPreset) || 'anti_bocal';
+        const eq = buildEQChainFromPreset(offlineCtx, presetKey);
+        if (eq) {
+          eq.output.connect(trackOut);
+          trackOut = eq.input;
+        }
       }
 
       if (track.type === 'voice') {
