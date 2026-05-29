@@ -4172,18 +4172,31 @@ function setupVoiceClipInteraction(el, clip, track) {
       originTrackId: track.id,
     };
     if (drag.ctrl) {
-      // Embarquer les events qui tombent dans l'intervalle du clip, sur les pistes bruitages
-      // de la même couleur que la piste voix (= pistes liées).
+      // Embarquer les éléments qui tombent dans l'intervalle du clip, sur les pistes liées
+      // (= pistes de même couleur), aussi bien bruitages (events) que voix (clips).
       const t0 = clip.time;
       const t1 = clip.time + (clip.sourceEnd - clip.sourceStart);
       drag.attached = [];
       const groupColor = track.color;
+      // Events bruitages des pistes liées
       const eventTracks = state.take.tracks.filter(t => t.type === 'events' && t.color === groupColor);
       for (const t of eventTracks) {
         for (const ev of t.events) {
           if (ev.time >= t0 && ev.time < t1) {
             const evEl = document.querySelector(`.event-block[data-id="${ev.id}"]`);
-            drag.attached.push({ ev, relTime: ev.time - t0, el: evEl });
+            drag.attached.push({ kind: 'event', ev, relTime: ev.time - t0, el: evEl });
+          }
+        }
+      }
+      // Clips voix des autres pistes voix liées (sauf celui qu'on est en train de drag)
+      const voiceTracks = state.take.tracks.filter(t => t.type === 'voice' && t.color === groupColor && t.id !== track.id);
+      for (const t of voiceTracks) {
+        for (const c of t.clips) {
+          const cEnd = c.time + (c.sourceEnd - c.sourceStart);
+          // On embarque tout clip dont la zone chevauche l'intervalle du clip dragé
+          if (cEnd > t0 && c.time < t1) {
+            const cEl = document.querySelector(`.voice-clip[data-clip-id="${c.id}"]`);
+            drag.attached.push({ kind: 'voiceClip', clip: c, relTime: c.time - t0, el: cEl });
           }
         }
       }
@@ -4206,9 +4219,14 @@ function setupVoiceClipInteraction(el, clip, track) {
     el.style.left = (newTime * state.zoomPxPerSec) + 'px';
     if (drag.attached) {
       for (const a of drag.attached) {
-        a.ev.time = newTime + a.relTime;
-        // Feedback visuel : repositionner aussi le DOM de l'event embarqué
-        if (a.el) a.el.style.left = (a.ev.time * state.zoomPxPerSec) + 'px';
+        if (a.kind === 'voiceClip') {
+          a.clip.time = newTime + a.relTime;
+          if (a.el) a.el.style.left = (a.clip.time * state.zoomPxPerSec) + 'px';
+        } else {
+          // event bruitage
+          a.ev.time = newTime + a.relTime;
+          if (a.el) a.el.style.left = (a.ev.time * state.zoomPxPerSec) + 'px';
+        }
       }
     }
     recomputeDuration();
