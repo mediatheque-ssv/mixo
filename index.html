@@ -665,14 +665,6 @@
     pointer-events: none;
     font-weight: 600;
   }
-  .eq-preset-btn.active {
-    background: rgba(212,175,55,0.15) !important;
-    color: var(--brass) !important;
-    font-weight: 600;
-  }
-  .eq-preset-btn.active::before {
-    content: "✓ ";
-  }
   .pad.project-pad .pad-actions { right: 38px; }
 
   /* === ÉDITEUR === */
@@ -807,6 +799,48 @@
     background: linear-gradient(180deg, var(--led-red-glow) 0%, var(--led-red) 100%);
     color: #fff; border-color: #5a0e0b;
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), 0 0 6px rgba(239,68,68,0.5);
+  }
+  /* Label de preset à l'intérieur du bouton EQ (ex: "EQ Anti-bocal") */
+  .track-eq-label {
+    margin-left: 3px;
+    font-size: 9px;
+    font-weight: 600;
+    opacity: 0.9;
+  }
+  /* Popover des presets EQ d'une piste */
+  .track-eq-popover {
+    position: fixed;
+    z-index: 1000;
+    background: linear-gradient(180deg, var(--panel-1) 0%, var(--panel-2) 100%);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 4px;
+    display: flex; flex-direction: column; gap: 2px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.6);
+    min-width: 160px;
+  }
+  .track-eq-popover-item {
+    text-align: left;
+    padding: 6px 10px;
+    font-size: 12px;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    border-radius: 3px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .track-eq-popover-item:hover {
+    background: rgba(212,175,55,0.15);
+    color: var(--brass);
+  }
+  .track-eq-popover-item.active {
+    background: rgba(212,175,55,0.25);
+    color: var(--brass);
+    font-weight: 700;
+  }
+  .track-eq-popover-item.active::before {
+    content: "✓ ";
   }
   .track-mini-btn.solo.active {
     background: linear-gradient(180deg, var(--brass) 0%, var(--brass-deep) 100%);
@@ -1571,14 +1605,6 @@
       <div id="mixVoicesDropdown" class="bank-menu-dropdown" hidden>
         <button id="btnMixPreset" class="menu-item" style="font-weight:700;color:var(--brass)">Mix podcast (normaliser + compresser)</button>
         <div class="menu-separator"></div>
-        <div class="menu-item menu-item-section">EQ — choisir un preset :</div>
-        <button class="menu-item eq-preset-btn" data-eq-preset="none">Aucun EQ</button>
-        <button class="menu-item eq-preset-btn" data-eq-preset="anti_bocal">Anti-bocal</button>
-        <button class="menu-item eq-preset-btn" data-eq-preset="voix_chaude">Voix chaude</button>
-        <button class="menu-item eq-preset-btn" data-eq-preset="voix_claire">Voix claire</button>
-        <button class="menu-item eq-preset-btn" data-eq-preset="fm_radio">FM radio</button>
-        <button class="menu-item eq-preset-btn" data-eq-preset="voix_brillante">Voix brillante</button>
-        <div class="menu-separator"></div>
         <button id="btnCompressAllVoices" class="menu-item">Compresser toutes les voix</button>
         <button id="btnUncompressAllVoices" class="menu-item">Désactiver la compression</button>
         <button id="btnNormalizeAllVoices" class="menu-item">Normaliser toutes les voix</button>
@@ -1762,6 +1788,8 @@
       <div class="help-desc">Sauvegarder le projet</div>
       <div class="help-cmd"><kbd>Ctrl+←</kbd> / <kbd>Ctrl+→</kbd></div>
       <div class="help-desc">Coller le clip sélectionné au voisin précédent / suivant</div>
+      <div class="help-cmd"><kbd>Ctrl+↑</kbd> / <kbd>Ctrl+↓</kbd></div>
+      <div class="help-desc">Envoyer le clip vers la piste voix précédente / suivante (créée si besoin)</div>
     </div>
 
     <h4 class="help-section-title">Gestes timeline</h4>
@@ -2122,6 +2150,47 @@ function snapSelectedToNeighbor(direction) {
 function getItemDuration(item, track) {
   if (track.type === 'voice') return item.sourceEnd - item.sourceStart;
   return item.duration;
+}
+
+// Déplace le clip voix sélectionné vers la piste voix précédente (-1) ou suivante (+1).
+// Si la piste voisine n'existe pas, on en crée une nouvelle juste à côté.
+function moveSelectedClipToAdjacentVoiceTrack(direction) {
+  if (!state.take || state.selectedKind !== 'voice' || !state.selectedId) return;
+  const found = findClipById(state.selectedId);
+  if (!found) return;
+  const { clip, track: currentTrack } = found;
+
+  // Liste ordonnée des pistes voix dans la timeline (ordre d'affichage)
+  const voiceTracks = state.take.tracks.filter(t => t.type === 'voice');
+  const currentIdx = voiceTracks.indexOf(currentTrack);
+  if (currentIdx < 0) return;
+
+  let targetTrack;
+  const targetIdx = currentIdx + direction;
+  if (targetIdx >= 0 && targetIdx < voiceTracks.length) {
+    targetTrack = voiceTracks[targetIdx];
+  } else {
+    // Pas de voisin : créer une nouvelle piste voix et l'insérer à la bonne position
+    targetTrack = makeVoiceTrack();
+    // Insérer dans state.take.tracks juste avant/après la piste courante (selon direction)
+    const currentTrackGlobalIdx = state.take.tracks.indexOf(currentTrack);
+    if (direction > 0) {
+      state.take.tracks.splice(currentTrackGlobalIdx + 1, 0, targetTrack);
+    } else {
+      state.take.tracks.splice(currentTrackGlobalIdx, 0, targetTrack);
+    }
+  }
+
+  // Retirer le clip de la piste courante, l'ajouter à la piste cible
+  const clipIdx = currentTrack.clips.indexOf(clip);
+  if (clipIdx < 0) return;
+  currentTrack.clips.splice(clipIdx, 1);
+  targetTrack.clips.push(clip);
+
+  // L'élément reste sélectionné, mais sur sa nouvelle piste
+  state.activeTrackId = targetTrack.id;
+  pushHistory();
+  renderTimeline();
 }
 // Toutes les clips voix, à plat (utile pour render global, mix, snapToClips)
 function getAllClips() {
@@ -2632,7 +2701,7 @@ function playMixForOverdub() {
       state.playback.sources.push(comp.input, comp.output);
     }
     if (track.eq) {
-      const eq = createVoiceEQ(ctx);
+      const eq = createVoiceEQ(ctx, track);
       eq.output.connect(trackOut);
       trackOut = eq.input;
       state.playback.sources.push(eq.input, eq.output);
@@ -3581,7 +3650,9 @@ function renderTracks(w) {
       </div>
       <div class="track-head-row" style="gap:3px;margin-top:2px">
         <button class="track-mini-btn" data-normalize="${track.id}" title="Normaliser la piste" style="flex:1;padding:3px 4px;font-size:10px">Norm.</button>
-        <button class="track-mini-btn ${track.eq ? 'active' : ''}" data-eq="${track.id}" title="EQ vocal (passe-haut + boost médium)" style="flex:1;padding:3px 4px;font-size:10px">EQ</button>
+        <div class="track-eq-wrapper" style="flex:1;position:relative">
+          <button class="track-mini-btn ${track.eq ? 'active' : ''}" data-eq="${track.id}" title="Choisir un preset d'EQ pour cette piste" style="width:100%;padding:3px 4px;font-size:10px">EQ${track.eq && track.eqPreset && EQ_PRESETS[track.eqPreset] ? '<span class="track-eq-label">' + EQ_PRESETS[track.eqPreset].label.split(' ')[0] + '</span>' : ''}</button>
+        </div>
         <button class="track-mini-btn ${track.compressed ? 'active' : ''}" data-compress="${track.id}" title="Compression vocale" style="flex:1;padding:3px 4px;font-size:10px">Comp</button>
       </div>
     `;
@@ -3656,7 +3727,7 @@ function renderTracks(w) {
     const eqBtn = head.querySelector(`[data-eq="${track.id}"]`);
     if (eqBtn) eqBtn.addEventListener('click', e => {
       e.stopPropagation();
-      toggleTrackEQ(track.id);
+      openTrackEqPopover(eqBtn, track);
     });
     const volSlider = head.querySelector(`[data-track-vol="${track.id}"]`);
     volSlider.addEventListener('input', e => {
@@ -4897,15 +4968,13 @@ function rebuildEqInSlot(ctx, slot, presetKey) {
 }
 
 // Applique l'EQ courant à toutes les pistes en cours de lecture (changement de preset à chaud)
-function updateLiveEqOnAllTracks() {
-  if (!state.playback.active || !state.playback.trackEqSlots || !state.take) return;
-  const presetKey = state.take.eqPreset || 'anti_bocal';
-  for (const track of state.take.tracks) {
-    const slot = state.playback.trackEqSlots.get(track.id);
-    if (!slot) continue;
-    const key = track.eq ? presetKey : 'none';
-    rebuildEqInSlot(state.audioCtx, slot, key);
-  }
+// Applique l'EQ courant d'UNE piste à chaud (pour quand on change son preset pendant la lecture)
+function updateLiveEqForTrack(track) {
+  if (!state.playback.active || !state.playback.trackEqSlots || !track) return;
+  const slot = state.playback.trackEqSlots.get(track.id);
+  if (!slot) return;
+  const key = track.eq ? (track.eqPreset || 'anti_bocal') : 'none';
+  rebuildEqInSlot(state.audioCtx, slot, key);
 }
 
 // Met à jour visuellement une piste comme étant mute/inaudible (CSS uniquement, pas de re-render).
@@ -5333,9 +5402,6 @@ document.getElementById('btnMixVoices').addEventListener('click', e => {
   e.stopPropagation();
   const dd = document.getElementById('mixVoicesDropdown');
   dd.hidden = !dd.hidden;
-  if (!dd.hidden && typeof updateEqPresetVisualState === 'function') {
-    updateEqPresetVisualState();
-  }
 });
 document.addEventListener('click', e => {
   const dd = document.getElementById('mixVoicesDropdown');
@@ -5353,40 +5419,6 @@ document.getElementById('btnCompressAllVoices').addEventListener('click', () => 
   const inc = document.getElementById('mixIncludeEvents').checked;
   compressAllTracks(inc);
 });
-// Boutons de preset EQ : applique le preset au projet et active l'EQ sur toutes les pistes voix
-document.querySelectorAll('.eq-preset-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    closeMixMenu();
-    if (!state.take) return;
-    const preset = btn.dataset.eqPreset;
-    state.take.eqPreset = preset;
-    const inc = document.getElementById('mixIncludeEvents').checked;
-    const tracks = getTargetTracksForGlobalAction(inc);
-    if (preset === 'none') {
-      for (const t of tracks) t.eq = false;
-    } else {
-      for (const t of tracks) t.eq = true;
-    }
-    // Si la lecture tourne, appliquer le nouveau preset à chaud (sans Stop/Play)
-    updateLiveEqOnAllTracks();
-    pushHistory();
-    renderTimeline();
-    updateEqPresetVisualState();
-    const label = EQ_PRESETS[preset] ? EQ_PRESETS[preset].label : preset;
-    showStatus(`EQ : « ${label} » appliqué sur ${tracks.length} piste${tracks.length > 1 ? 's' : ''}`, 'success');
-  });
-});
-
-// Met à jour le check ✓ sur le preset actif dans le menu
-function updateEqPresetVisualState() {
-  const current = (state.take && state.take.eqPreset) || 'anti_bocal';
-  // Si aucune piste n'a l'EQ activé, on considère le preset comme "none"
-  const anyEqOn = state.take && state.take.tracks.some(t => t.eq);
-  const displayed = anyEqOn ? current : 'none';
-  document.querySelectorAll('.eq-preset-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.eqPreset === displayed);
-  });
-}
 document.getElementById('btnUncompressAllVoices').addEventListener('click', () => {
   closeMixMenu();
   const inc = document.getElementById('mixIncludeEvents').checked;
@@ -5552,9 +5584,9 @@ function buildEQChainFromPreset(ctx, presetKey) {
   return { input: nodes[0], output: nodes[nodes.length - 1] };
 }
 
-function createVoiceEQ(ctx) {
-  // Utilise le preset actif du projet, par défaut "france_inter"
-  const presetKey = (state.take && state.take.eqPreset) || 'anti_bocal';
+function createVoiceEQ(ctx, track) {
+  // Le preset EQ est stocké par piste. Si pas défini, on prend "anti_bocal" par défaut.
+  const presetKey = (track && track.eqPreset) || 'anti_bocal';
   return buildEQChainFromPreset(ctx, presetKey) || (function() {
     // Si "none", on renvoie un pass-through (un gain unitaire qui ne change rien)
     const g = ctx.createGain();
@@ -5634,7 +5666,7 @@ async function computeTrackRMSWithCompression(track) {
     chainHead = comp;
   }
   if (track.eq) {
-    const presetKey = (state.take && state.take.eqPreset) || 'anti_bocal';
+    const presetKey = track.eqPreset || 'anti_bocal';
     const eq = buildEQChainFromPreset(offlineCtx, presetKey);
     if (eq) {
       eq.output.connect(chainHead);
@@ -5752,6 +5784,57 @@ function toggleTrackEQ(trackId) {
   pushHistory();
   renderTimeline();
   showStatus(`EQ vocal ${track.eq ? 'activé' : 'désactivé'} sur "${track.name}"`, 'info');
+}
+
+// Popover de choix de preset EQ pour une piste donnée
+function openTrackEqPopover(anchorBtn, track) {
+  // Si un popover est déjà ouvert, le fermer
+  document.querySelectorAll('.track-eq-popover').forEach(p => p.remove());
+
+  const pop = document.createElement('div');
+  pop.className = 'track-eq-popover';
+  // Liste des presets : "Désactivé" en premier (= track.eq = false), puis chaque preset
+  const items = [
+    { key: '__off__', label: 'Désactivé' },
+    ...Object.entries(EQ_PRESETS).map(([key, p]) => ({ key, label: p.label }))
+  ];
+  const currentKey = !track.eq ? '__off__' : (track.eqPreset || 'anti_bocal');
+  for (const item of items) {
+    const btn = document.createElement('button');
+    btn.className = 'track-eq-popover-item' + (item.key === currentKey ? ' active' : '');
+    btn.textContent = item.label;
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      if (item.key === '__off__') {
+        track.eq = false;
+      } else {
+        track.eq = true;
+        track.eqPreset = item.key;
+      }
+      updateLiveEqForTrack(track);
+      pushHistory();
+      renderTimeline();
+      pop.remove();
+    });
+    pop.appendChild(btn);
+  }
+
+  // Positionner le popover sous le bouton EQ
+  document.body.appendChild(pop);
+  const rect = anchorBtn.getBoundingClientRect();
+  pop.style.left = rect.left + 'px';
+  pop.style.top = (rect.bottom + 4) + 'px';
+
+  // Fermer si on clique ailleurs
+  setTimeout(() => {
+    const onDocClick = (e) => {
+      if (!pop.contains(e.target)) {
+        pop.remove();
+        document.removeEventListener('click', onDocClick);
+      }
+    };
+    document.addEventListener('click', onDocClick);
+  }, 0);
 }
 
 // Actions globales sur l'ensemble des pistes voix (et optionnellement bruitages)
@@ -5956,7 +6039,7 @@ function playMix(opts = {}) {
     const slot = { inputGain: eqInSlot, outputGain: eqOutSlot, currentEqNodes: [] };
     state.playback.trackEqSlots.set(track.id, slot);
     // Brancher l'EQ initial dans le slot
-    rebuildEqInSlot(ctx, slot, track.eq ? ((state.take && state.take.eqPreset) || 'anti_bocal') : 'none');
+    rebuildEqInSlot(ctx, slot, track.eq ? (track.eqPreset || 'anti_bocal') : 'none');
     chainTail = eqInSlot;
     state.playback.sources.push(eqInSlot, eqOutSlot);
 
@@ -6210,7 +6293,7 @@ async function exportMix() {
         trackOut = comp;
       }
       if (track.eq) {
-        const presetKey = (state.take && state.take.eqPreset) || 'anti_bocal';
+        const presetKey = track.eqPreset || 'anti_bocal';
         const eq = buildEQChainFromPreset(offlineCtx, presetKey);
         if (eq) {
           eq.output.connect(trackOut);
@@ -7509,6 +7592,16 @@ document.addEventListener('keydown', e => {
       else if (state.selectedKind === 'voice') removeVoiceClip(state.selectedId);
       return;
     }
+  }
+  // Ctrl+flèche haut/bas : déplacer le clip voix sélectionné vers la piste voix précédente/suivante
+  // (créée à la volée si elle n'existe pas). Pratique pour isoler des passages sur des pistes
+  // dédiées qui auront chacune leur propre EQ.
+  if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && (e.ctrlKey || e.metaKey)
+      && state.take && state.selectedKind === 'voice' && state.selectedId
+      && !document.getElementById('editorPanel').classList.contains('hidden')) {
+    e.preventDefault();
+    moveSelectedClipToAdjacentVoiceTrack(e.key === 'ArrowDown' ? 1 : -1);
+    return;
   }
   // Ctrl+flèche gauche/droite : coller le clip sélectionné au clip précédent/suivant de la même piste
   if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && (e.ctrlKey || e.metaKey)
