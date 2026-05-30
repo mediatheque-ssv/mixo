@@ -922,7 +922,7 @@
     position: relative;
     padding: 8px 14px 4px;
     background: transparent;
-    display: flex; align-items: center;
+    display: flex; align-items: center; gap: 8px;
   }
   .track-add-btn {
     padding: 4px 10px !important;
@@ -4163,31 +4163,21 @@ function renderTracks(w) {
     wrap.appendChild(trackEl);
   });
 
-  // Bouton "+ Ajouter une piste" en mini-lien doré pointillé, en bas de la liste des pistes
+  // Deux boutons "+ Piste voix" / "+ Piste FX" côte à côte, sous la dernière piste
   const addRow = document.createElement('div');
   addRow.className = 'track-add-row';
   addRow.innerHTML = `
-    <button class="track-add-btn" id="trackAddBtn" title="Ajouter une piste">+ Ajouter une piste</button>
-    <div class="track-add-menu" id="trackAddMenu">
-      <button data-add="voice">Nouvelle piste voix</button>
-      <button data-add="events">Nouvelle piste bruitages</button>
-    </div>
+    <button class="track-add-btn" data-add="voice" title="Ajouter une piste voix">+ Piste voix</button>
+    <button class="track-add-btn" data-add="events" title="Ajouter une piste de bruitages / FX">+ Piste FX</button>
   `;
   wrap.appendChild(addRow);
 
-  const addBtn = addRow.querySelector('#trackAddBtn');
-  const addMenu = addRow.querySelector('#trackAddMenu');
-  addBtn.addEventListener('click', e => {
-    e.stopPropagation();
-    addMenu.classList.toggle('visible');
-  });
-  addMenu.querySelectorAll('button').forEach(b => {
-    b.addEventListener('click', () => {
-      addMenu.classList.remove('visible');
+  addRow.querySelectorAll('.track-add-btn').forEach(b => {
+    b.addEventListener('click', e => {
+      e.stopPropagation();
       addNewTrack(b.dataset.add);
     });
   });
-  document.addEventListener('click', () => addMenu.classList.remove('visible'), { once: true });
 }
 
 function startRenameTrack(nameEl, track) {
