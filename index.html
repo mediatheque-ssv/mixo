@@ -1318,6 +1318,32 @@
     width: 0%; transition: width 0.2s;
     box-shadow: 0 0 8px rgba(212,175,55,0.5);
   }
+  /* Spinner animé pour montrer qu'un traitement est en cours */
+  .progress-spinner {
+    width: 32px; height: 32px; margin: 0 auto 16px;
+    border: 3px solid var(--border-soft);
+    border-top-color: var(--brass);
+    border-radius: 50%;
+    animation: progressSpin 0.8s linear infinite;
+  }
+  @keyframes progressSpin { to { transform: rotate(360deg); } }
+  .progress-cancel {
+    margin-top: 18px;
+    padding: 7px 18px;
+    font-size: 12px;
+    background: transparent;
+    color: var(--text-soft);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .progress-cancel:hover {
+    color: #ef4444;
+    border-color: #ef4444;
+    background: rgba(239,68,68,0.08);
+  }
+  .progress-cancel.hidden { display: none !important; }
   .hidden { display: none !important; }
   .file-input { display: none; }
   kbd {
@@ -1831,9 +1857,11 @@
 
 <div id="progressOverlay" class="progress-overlay">
   <div class="progress-box">
+    <div class="progress-spinner" id="progressSpinner"></div>
     <div id="progressLabel" style="font-size: 14px;">Conversion…</div>
     <div class="progress-bar"><div id="progressFill" class="progress-fill"></div></div>
     <div id="progressDetail" style="font-size: 12px; color: #8a91a0; margin-top: 8px;"></div>
+    <button id="progressCancel" class="progress-cancel">Annuler</button>
   </div>
 </div>
 
@@ -2701,6 +2729,8 @@ function pushHistory() {
 function resetHistory() {
   state.history.stack = [];
   state.history.index = -1;
+  // Nouveau projet / nouvelle prise : les anciennes waveforms ne servent plus
+  if (typeof _waveformCache !== 'undefined') _waveformCache.clear();
   if (state.take) pushHistory();
   updateHistoryButtons();
 }
@@ -3197,13 +3227,18 @@ async function onRecordingStop() {
     const mime = state.micRecorder.mimeType || 'audio/webm';
     const voiceBlob = new Blob(state.micChunks, { type: mime });
     let voiceBuffer = null;
+    // Le décodage de l'audio peut prendre du temps sur une longue prise : on affiche un overlay
+    // (sans bouton annuler : on ne veut pas risquer de perdre l'enregistrement qu'on vient de faire).
+    showProgress('Traitement de l\'enregistrement…', null);
     try {
       const ab = await voiceBlob.arrayBuffer();
       voiceBuffer = await state.audioCtx.decodeAudioData(ab.slice(0));
     } catch (e) {
+      hideProgress();
       showStatus('Erreur lors du décodage de la voix : ' + e.message, 'error');
       return;
     }
+    updateProgress('Préparation de la timeline…', null);
     const bufferId = uid('vb');
     state.take.voiceBuffers[bufferId] = voiceBuffer;
     // Insertion : dans la piste enregistrée (overdubVoiceTrackId), au temps overdubStartTime
@@ -3228,10 +3263,12 @@ async function onRecordingStop() {
       // En overdub on ne reset pas l'historique (on garde celui du projet) et on garde l'éditeur ouvert
       pushHistory();
       renderTimeline();
+      hideProgress();
       showStatus('Prise ajoutée dans une nouvelle piste voix.', 'success');
     } else {
       resetHistory();
       await showEditor();
+      hideProgress();
       showStatus('Prise terminée. Édite la timeline ou exporte directement.', 'success');
     }
     state.isOverdub = false;
@@ -3405,8 +3442,7 @@ async function exportBankAsZip(bankId) {
   zip.file('metadata.json', JSON.stringify(metadata));
   const blob = await zip.generateAsync({
     type: 'blob',
-    compression: 'DEFLATE',
-    compressionOptions: { level: 6 },
+    compression: 'STORE', // l'audio WAV ne se compresse quasi pas ; STORE évite de bloquer
   });
   return { blob, name: bank.name };
 }
@@ -3974,7 +4010,20 @@ function getTimelineWidth() {
   return Math.max(400, TRACK_HEAD_W + (state.take.duration + TIMELINE_EXTRA_SECONDS) * state.zoomPxPerSec);
 }
 
+// Wrapper qui regroupe (coalesce) les appels multiples à renderTimeline dans un même cycle.
+// Beaucoup d'actions appellent renderTimeline plusieurs fois de suite (recompute + history +
+// render) ; on n'exécute le vrai rendu qu'une fois, à la prochaine frame.
+let _renderScheduled = false;
 function renderTimeline() {
+  if (_renderScheduled) return;
+  _renderScheduled = true;
+  requestAnimationFrame(() => {
+    _renderScheduled = false;
+    renderTimelineNow();
+  });
+}
+
+function renderTimelineNow() {
   if (!state.take) return;
   // Cohérence sélection : si un élément principal est défini mais pas dans la sélection multi,
   // on (re)synchronise. Cas du code legacy qui set juste selectedKind/Id.
@@ -4033,6 +4082,7 @@ function renderTracks(w) {
   wrap.innerHTML = '';
   if (!state.take) return;
   state.take.tracks.forEach((track, idx) => {
+   try {
     const trackEl = document.createElement('div');
     trackEl.className = 'timeline-track ' + (track.type === 'voice' ? 'voice-track' : 'events-track');
     trackEl.style.width = w + 'px';
@@ -4106,7 +4156,8 @@ function renderTracks(w) {
       e.stopPropagation();
       openTrackColorPopover(colorDot, track);
     });
-    head.querySelector(`[data-mute="${track.id}"]`).addEventListener('click', e => {
+    const muteBtn = head.querySelector(`[data-mute="${track.id}"]`);
+    if (muteBtn) muteBtn.addEventListener('click', e => {
       e.stopPropagation();
       track.muted = !track.muted;
       updateLiveTrackGains();
@@ -4115,7 +4166,8 @@ function renderTracks(w) {
       e.currentTarget.classList.toggle('active', track.muted);
       updateTrackMutedVisual(track);
     });
-    head.querySelector(`[data-solo="${track.id}"]`).addEventListener('click', e => {
+    const soloBtn = head.querySelector(`[data-solo="${track.id}"]`);
+    if (soloBtn) soloBtn.addEventListener('click', e => {
       e.stopPropagation();
       track.solo = !track.solo;
       updateLiveTrackGains();
@@ -4128,7 +4180,8 @@ function renderTracks(w) {
     if (mvUp) mvUp.addEventListener('click', e => { e.stopPropagation(); moveTrack(track.id, -1); });
     const mvDn = head.querySelector(`[data-move-down="${track.id}"]`);
     if (mvDn) mvDn.addEventListener('click', e => { e.stopPropagation(); moveTrack(track.id, +1); });
-    head.querySelector(`[data-delete-track="${track.id}"]`).addEventListener('click', e => {
+    const delBtn = head.querySelector(`[data-delete-track="${track.id}"]`);
+    if (delBtn) delBtn.addEventListener('click', e => {
       e.stopPropagation();
       deleteTrack(track.id);
     });
@@ -4148,20 +4201,29 @@ function renderTracks(w) {
       openTrackEqPopover(eqBtn, track);
     });
     const volSlider = head.querySelector(`[data-track-vol="${track.id}"]`);
-    volSlider.addEventListener('input', e => {
-      const v = parseInt(e.target.value);
-      track.volume = v / 100;
-      e.target.nextElementSibling.textContent = v + '%';
-      refreshWaveformsOfTrack(track);
-    });
-    volSlider.addEventListener('change', () => pushHistory());
+    if (volSlider) {
+      volSlider.addEventListener('input', e => {
+        const v = parseInt(e.target.value);
+        track.volume = v / 100;
+        e.target.nextElementSibling.textContent = v + '%';
+        refreshWaveformsOfTrack(track);
+      });
+      volSlider.addEventListener('change', () => pushHistory());
+    }
 
     // Renommer au double-clic
     const nameEl = head.querySelector(`[data-track-name="${track.id}"]`);
-    nameEl.addEventListener('click', e => e.stopPropagation()); // empêche le re-render qui détruirait le span avant le dblclick
-    nameEl.addEventListener('dblclick', e => { e.stopPropagation(); startRenameTrack(nameEl, track); });
+    if (nameEl) {
+      nameEl.addEventListener('click', e => e.stopPropagation()); // empêche le re-render qui détruirait le span avant le dblclick
+      nameEl.addEventListener('dblclick', e => { e.stopPropagation(); startRenameTrack(nameEl, track); });
+    }
 
     wrap.appendChild(trackEl);
+   } catch (err) {
+    // Une piste qui échoue (ex: buffer manquant après import) ne doit pas empêcher
+    // le rendu des autres pistes NI des boutons d'ajout en bas. On loggue et on continue.
+    console.warn('renderTracks: échec rendu piste', track && track.id, err);
+   }
   });
 
   // Deux boutons "+ Piste voix" / "+ Piste FX" côte à côte, sous la dernière piste
@@ -4327,6 +4389,7 @@ function closeTrackColorPopover() {
 // === Rendu des clips voix dans une piste ===
 function renderVoiceClipsInTrack(container, track) {
   track.clips.forEach(clip => {
+   try {
     const dur = clip.sourceEnd - clip.sourceStart;
     if (dur <= 0) return;
     const left = clip.time * state.zoomPxPerSec;
@@ -4352,7 +4415,8 @@ function renderVoiceClipsInTrack(container, track) {
     `;
     container.appendChild(el);
     drawClipWaveform(el.querySelector('canvas'), clip, track.color, track.volume ?? 1);
-    el.querySelector('.voice-clip-del').addEventListener('click', e => { e.stopPropagation(); removeVoiceClip(clip.id); });
+    const delBtn = el.querySelector('.voice-clip-del');
+    if (delBtn) delBtn.addEventListener('click', e => { e.stopPropagation(); removeVoiceClip(clip.id); });
     // Bouton ⋯ ouvre l'inspecteur (propriétés)
     const infoBtn = el.querySelector('.clip-info-btn');
     if (infoBtn) {
@@ -4401,11 +4465,34 @@ function renderVoiceClipsInTrack(container, track) {
     }
     setupVoiceClipInteraction(el, clip, track);
     setupVoiceClipTrim(el, clip, track);
+   } catch (err) {
+    console.warn('renderVoiceClipsInTrack: échec rendu clip', clip && clip.id, err);
+   }
   });
 }
 
 // Largeur max d'un seul canvas (les navigateurs limitent à ~16384 px). On reste large sous la limite pour le DPR.
 const MAX_CANVAS_DIM = 8000;
+
+// Cache des formes d'onde déjà rendues. Clé = identité du clip + paramètres de rendu.
+// Évite de re-parcourir des millions d'échantillons à chaque renderTimeline().
+// La valeur est un canvas hors-écran qu'on recopie (rapide) au lieu de tout recalculer.
+const _waveformCache = new Map();
+const _WAVEFORM_CACHE_MAX = 200; // limite mémoire : on garde au plus 200 waveforms en cache
+
+function waveformCacheKey(clip, widthPx, canvasHeight, dpr, effectiveGain, normalColor) {
+  // Arrondir le gain et la largeur pour éviter des clés trop sensibles aux micro-variations
+  return [
+    clip.bufferId,
+    clip.sourceStart.toFixed(4),
+    clip.sourceEnd.toFixed(4),
+    Math.round(widthPx),
+    canvasHeight,
+    dpr,
+    effectiveGain.toFixed(3),
+    normalColor,
+  ].join('|');
+}
 
 function drawClipWaveform(canvas, clip, color, trackVol) {
   const buf = getClipBuffer(clip);
@@ -4423,10 +4510,31 @@ function drawClipWaveform(canvas, clip, color, trackVol) {
   // Largeur logique max par "tuile" de canvas (sécurité 8000px × dpr ≤ 16000)
   const maxTilePx = Math.floor(MAX_CANVAS_DIM / dpr);
 
-  // Si le clip rentre dans un seul canvas, comportement classique
+  // Si le clip rentre dans un seul canvas, comportement classique AVEC cache
   if (widthPx <= maxTilePx) {
-    drawWaveformOnCanvas(canvas, buf, clip.sourceStart, clip.sourceEnd, 0, widthPx, canvasHeight, dpr, effectiveGain, normalColor, clipColor);
+    const key = waveformCacheKey(clip, widthPx, canvasHeight, dpr, effectiveGain, normalColor);
+    const cached = _waveformCache.get(key);
+    canvas.style.width = widthPx + 'px';
+    canvas.style.height = canvasHeight + 'px';
+    canvas.width = Math.floor(widthPx * dpr);
+    canvas.height = Math.floor(canvasHeight * dpr);
     canvas.style.marginTop = '18px';
+    const ctx = canvas.getContext('2d');
+    if (cached) {
+      // Réutiliser l'image déjà rendue : simple recopie (très rapide)
+      ctx.drawImage(cached, 0, 0);
+    } else {
+      // Premier rendu : on calcule, puis on stocke une copie hors-écran dans le cache
+      drawWaveformOnCanvas(canvas, buf, clip.sourceStart, clip.sourceEnd, 0, widthPx, canvasHeight, dpr, effectiveGain, normalColor, clipColor);
+      const off = document.createElement('canvas');
+      off.width = canvas.width; off.height = canvas.height;
+      off.getContext('2d').drawImage(canvas, 0, 0);
+      if (_waveformCache.size >= _WAVEFORM_CACHE_MAX) {
+        // Évincer la plus ancienne entrée (Map garde l'ordre d'insertion)
+        _waveformCache.delete(_waveformCache.keys().next().value);
+      }
+      _waveformCache.set(key, off);
+    }
     return;
   }
 
@@ -4459,6 +4567,38 @@ function drawClipWaveform(canvas, clip, color, trackVol) {
 }
 
 // Dessine une portion de waveform sur un canvas donné, sans gérer le tuilage.
+// ===================== Cache de "peaks" par buffer =====================
+// Parcourir des millions d'échantillons à chaque dessin (zoom, render) fait freezer l'UI.
+// Solution : on précalcule UNE fois, par buffer, les min/max par petite tranche fixe ("bucket").
+// Ensuite, dessiner à n'importe quel zoom = agréger ces buckets (quelques milliers d'opérations
+// au lieu de millions). Le cache est indexé par identité de l'AudioBuffer.
+const PEAK_BUCKET = 256; // nombre d'échantillons par bucket (résolution largement suffisante à l'écran)
+const _peaksCache = new WeakMap(); // AudioBuffer -> { min: Float32Array, max: Float32Array, bucket, sampleRate }
+
+function getBufferPeaks(buf) {
+  let entry = _peaksCache.get(buf);
+  if (entry) return entry;
+  const data = buf.getChannelData(0);
+  const n = data.length;
+  const nBuckets = Math.ceil(n / PEAK_BUCKET);
+  const min = new Float32Array(nBuckets);
+  const max = new Float32Array(nBuckets);
+  for (let b = 0; b < nBuckets; b++) {
+    const s = b * PEAK_BUCKET;
+    const e = Math.min(n, s + PEAK_BUCKET);
+    let mn = 1, mx = -1;
+    for (let i = s; i < e; i++) {
+      const v = data[i];
+      if (v < mn) mn = v;
+      if (v > mx) mx = v;
+    }
+    min[b] = mn; max[b] = mx;
+  }
+  entry = { min, max, bucket: PEAK_BUCKET, sampleRate: buf.sampleRate };
+  _peaksCache.set(buf, entry);
+  return entry;
+}
+
 function drawWaveformOnCanvas(canvas, buf, srcStart, srcEnd, offsetX, widthPx, heightPx, dpr, effectiveGain, normalColor, clipColor) {
   canvas.style.width = widthPx + 'px';
   canvas.style.height = heightPx + 'px';
@@ -4467,23 +4607,27 @@ function drawWaveformOnCanvas(canvas, buf, srcStart, srcEnd, offsetX, widthPx, h
   const ctx = canvas.getContext('2d');
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.scale(dpr, dpr);
-  const data = buf.getChannelData(0);
-  const sampleStart = Math.floor(srcStart * buf.sampleRate);
-  const sampleEnd = Math.floor(srcEnd * buf.sampleRate);
-  const sampleRange = sampleEnd - sampleStart;
-  if (sampleRange <= 0) return;
-  const samplesPerPx = sampleRange / widthPx;
+
+  const peaks = getBufferPeaks(buf);
+  const bucket = peaks.bucket;
+  // Bucket de départ/fin correspondant à la portion de clip affichée
+  const startBucket = (srcStart * buf.sampleRate) / bucket;
+  const endBucket = (srcEnd * buf.sampleRate) / bucket;
+  const bucketRange = endBucket - startBucket;
+  if (bucketRange <= 0) return;
+  const bucketsPerPx = bucketRange / widthPx;
   const H = heightPx, mid = H / 2;
+  const nB = peaks.min.length;
 
   for (let x = 0; x < widthPx; x++) {
-    const s = sampleStart + Math.floor(x * samplesPerPx);
-    const e = sampleStart + Math.floor((x + 1) * samplesPerPx);
+    const b0 = Math.floor(startBucket + x * bucketsPerPx);
+    const b1 = Math.max(b0 + 1, Math.floor(startBucket + (x + 1) * bucketsPerPx));
     let mn = 1, mx = -1;
-    for (let i = s; i < e && i < data.length; i++) {
-      const v = data[i] || 0;
-      if (v < mn) mn = v;
-      if (v > mx) mx = v;
+    for (let b = b0; b < b1 && b < nB; b++) {
+      if (peaks.min[b] < mn) mn = peaks.min[b];
+      if (peaks.max[b] > mx) mx = peaks.max[b];
     }
+    if (mn > mx) continue; // tranche vide
     const ampMin = mn * effectiveGain;
     const ampMax = mx * effectiveGain;
     const clippedMin = Math.max(-1, ampMin);
@@ -4728,7 +4872,7 @@ function setupVoiceClipInteraction(el, clip, track) {
       toggleItemInSelection('voice', clip.id);
       if (state.selectedId === clip.id) state.activeTrackId = track.id;
       state.voiceSelection = null;
-      renderTimeline();
+      refreshSelectionVisual();
       return;
     }
     // Clic simple : pas d'inspecteur. On reset la "request" précédente s'il y en avait une pour ce clip.
@@ -4742,6 +4886,7 @@ function setupVoiceClipInteraction(el, clip, track) {
     // Sinon, on remplace la sélection par ce seul clip.
     if (!isItemSelected('voice', clip.id)) {
       selectSingleItem('voice', clip.id);
+      refreshSelectionVisual();
     }
     state.activeTrackId = track.id;
     document.addEventListener('mousemove', onBodyMove);
@@ -4883,6 +5028,22 @@ function renderVoiceSelection() {
   el.style.width = Math.max(2, (sel.end - sel.start) * state.zoomPxPerSec) + 'px';
 }
 
+// Met à jour UNIQUEMENT l'apparence "sélectionné" des clips/events déjà présents dans le DOM,
+// sans reconstruire toute la timeline. Beaucoup plus léger que renderTimeline() pour un simple
+// changement de sélection (clic, Maj+clic).
+function refreshSelectionVisual() {
+  document.querySelectorAll('.voice-clip').forEach(el => {
+    const id = el.dataset.id;
+    el.classList.toggle('selected', isItemSelected('voice', id));
+  });
+  document.querySelectorAll('.event-block').forEach(el => {
+    const id = el.dataset.id;
+    el.classList.toggle('selected', isItemSelected('event', id));
+  });
+  // Garder l'inspecteur et la barre de sélection cohérents
+  renderInspector();
+}
+
 function updateSelectionToolbar() {
   const tb = document.getElementById('selectionToolbar');
   const info = document.getElementById('selectionInfo');
@@ -4919,6 +5080,7 @@ function ensureEventTrim(ev) {
 
 function renderEventsInTrack(container, track) {
   track.events.forEach(ev => {
+   try {
     ensureEventTrim(ev);
     const block = document.createElement('div');
     block.className = 'event-block'
@@ -4962,7 +5124,7 @@ function renderEventsInTrack(container, track) {
         toggleItemInSelection('event', ev.id);
         if (state.selectedId === ev.id) state.activeTrackId = track.id;
         state.voiceSelection = null;
-        renderTimeline();
+        refreshSelectionVisual();
         return;
       }
       const wasSelected = isItemSelected('event', ev.id);
@@ -4991,9 +5153,10 @@ function renderEventsInTrack(container, track) {
         state.inspectorRequestedFor = null;
       }
       // On évite de re-render si l'event était déjà sélectionné : préserve le DOM pour permettre le dblclick
-      if (!wasSelected) renderTimeline();
+      if (!wasSelected) refreshSelectionVisual();
     });
-    block.querySelector('.event-block-del').addEventListener('click', e => { e.stopPropagation(); deleteEvent(ev.id); });
+    const evDelBtn = block.querySelector('.event-block-del');
+    if (evDelBtn) evDelBtn.addEventListener('click', e => { e.stopPropagation(); deleteEvent(ev.id); });
     // Bouton ⋯ ouvre l'inspecteur
     const infoBtn = block.querySelector('.clip-info-btn');
     if (infoBtn) {
@@ -5008,6 +5171,9 @@ function renderEventsInTrack(container, track) {
     });
     makeEventDraggable(block, ev, track);
     setupEventTrim(block, ev);
+   } catch (err) {
+    console.warn('renderEventsInTrack: échec rendu event', ev && ev.id, err);
+   }
   });
 }
 
@@ -5083,6 +5249,7 @@ function setupVoiceClipTrim(el, clip, track) {
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
     }
+    let trimRaf = null;
     function onMove(e) {
       const dx = e.clientX - startX;
       const dt = dx / state.zoomPxPerSec;
@@ -5097,18 +5264,26 @@ function setupVoiceClipTrim(el, clip, track) {
         let newEnd = Math.min(fullDur, Math.max(origStart + minLen, origEnd + dt));
         clip.sourceEnd = newEnd;
       }
-      // Mettre à jour visuellement
+      // Mettre à jour la position/taille immédiatement (léger)
       const dur = clip.sourceEnd - clip.sourceStart;
       el.style.left = (clip.time * state.zoomPxPerSec) + 'px';
       el.style.width = Math.max(20, dur * state.zoomPxPerSec) + 'px';
-      const canvas = el.querySelector('canvas');
-      if (canvas) drawClipWaveform(canvas, clip, track.color, track.volume ?? 1);
+      // Redessiner la forme d'onde au maximum une fois par frame (évite de recalculer
+      // des millions d'échantillons à chaque pixel de souris pendant le rognage).
+      if (trimRaf === null) {
+        trimRaf = requestAnimationFrame(() => {
+          trimRaf = null;
+          const canvas = el.querySelector('canvas');
+          if (canvas) drawClipWaveform(canvas, clip, track.color, track.volume ?? 1);
+        });
+      }
       recomputeDuration();
     }
     function onUp() {
       handle.classList.remove('active');
       document.removeEventListener('mousemove', onMove);
       document.removeEventListener('mouseup', onUp);
+      if (trimRaf !== null) { cancelAnimationFrame(trimRaf); trimRaf = null; }
       const trimmed = (origStart !== clip.sourceStart) || (origEnd !== clip.sourceEnd);
       if (trimmed) pushHistory();
       renderTimeline();
@@ -5251,7 +5426,9 @@ function makeEventDraggable(block, ev, track) {
     const targetTrackId = detectTrackAtY(clientY);
     const targetTrack = targetTrackId ? findTrack(targetTrackId) : null;
     document.querySelectorAll('.timeline-track.drop-target').forEach(t => t.classList.remove('drop-target'));
-    if (targetTrack && targetTrack.type === 'events' && targetTrack.id !== originTrackId) {
+    // Cible valide = une autre piste FX (déplacement) OU une piste voix (conversion en clip)
+    if (targetTrack && targetTrack.id !== originTrackId
+        && (targetTrack.type === 'events' || targetTrack.type === 'voice')) {
       const targetEl = document.querySelector(`.timeline-track[data-track-id="${targetTrack.id}"]`);
       if (targetEl) targetEl.classList.add('drop-target');
       block.classList.add('dragging-cross-track');
@@ -5269,15 +5446,47 @@ function makeEventDraggable(block, ev, track) {
     const targetTrackId = detectTrackAtY(e.clientY);
     const targetTrack = targetTrackId ? findTrack(targetTrackId) : null;
     let movedToTrack = false;
-    if (targetTrack && targetTrack.type === 'events' && targetTrack.id !== originTrackId) {
+    let convertedToClip = false;
+    if (targetTrack && targetTrack.id !== originTrackId && targetTrack.type === 'events') {
+      // Déplacement vers une autre piste FX : l'event reste un event
       track.events = track.events.filter(x => x.id !== ev.id);
       targetTrack.events.push(ev);
       movedToTrack = true;
+    } else if (targetTrack && targetTrack.type === 'voice') {
+      // Lâché sur une piste VOIX : convertir le bruitage en vrai clip audio
+      const buf = state.padBuffers.get(ev.padId);
+      if (buf) {
+        const bufferId = uid('vb');
+        state.take.voiceBuffers[bufferId] = buf;
+        const clip = {
+          id: uid('vc'),
+          bufferId,
+          // Conserver le rognage et les réglages de l'event d'origine
+          sourceStart: ev.sourceStart ?? 0,
+          sourceEnd: ev.sourceEnd ?? buf.duration,
+          time: ev.time,
+          volume: ev.volume ?? 1,
+          muted: ev.muted ?? false,
+          fadeIn: ev.fadeIn ?? 0,
+          fadeOut: ev.fadeOut ?? 0,
+          name: ev.padName || 'Clip',
+        };
+        targetTrack.clips.push(clip);
+        // Retirer l'event de sa piste d'origine
+        track.events = track.events.filter(x => x.id !== ev.id);
+        // Sélectionner le nouveau clip
+        selectSingleItem('voice', clip.id);
+        state.activeTrackId = targetTrack.id;
+        convertedToClip = true;
+        showStatus(`"${ev.padName || 'Bruitage'}" converti en clip voix dans ${targetTrack.name}`, 'info');
+      } else {
+        showStatus("Impossible de convertir : audio du bruitage introuvable", 'error');
+      }
     }
     block.classList.remove('dragging');
     document.removeEventListener('mousemove', onMouseMove);
     document.removeEventListener('mouseup', onUp);
-    if (moved || movedToTrack) pushHistory();
+    if (moved || movedToTrack || convertedToClip) pushHistory();
     renderTimeline();
   }
   // Drag uniquement depuis la barre supérieure (handle), pas tout le bloc
@@ -6644,18 +6853,30 @@ function uncompressAllTracks(includeEvents = false) {
 async function normalizeAllTracks(includeEvents = false) {
   const tracks = getTargetTracksForGlobalAction(includeEvents);
   if (tracks.length === 0) { showStatus("Aucune piste éligible.", 'info'); return; }
-  showStatus(`Normalisation LUFS en cours (${tracks.length} piste${tracks.length > 1 ? 's' : ''})…`, 'info');
+  state._normCancelled = false;
+  showProgress(`Normalisation LUFS (${tracks.length} piste${tracks.length > 1 ? 's' : ''})…`, 0, {
+    onCancel: () => { state._normCancelled = true; },
+    cancelLabel: 'Annuler'
+  });
   let done = 0;
-  for (const t of tracks) {
-    try {
-      const lufs = await computeTrackLUFS(t);
-      if (isFinite(lufs)) {
-        t.volume = gainFromLUFS(lufs);
-        done++;
+  try {
+    for (let idx = 0; idx < tracks.length; idx++) {
+      if (state._normCancelled) { hideProgress(); showStatus('Normalisation annulée.', 'info'); renderTimeline(); return; }
+      const t = tracks[idx];
+      updateProgress(`Normalisation : piste ${idx + 1}/${tracks.length} (${t.name})…`, (idx / tracks.length) * 100);
+      await new Promise(r => setTimeout(r, 0));
+      try {
+        const lufs = await computeTrackLUFS(t);
+        if (isFinite(lufs)) {
+          t.volume = gainFromLUFS(lufs);
+          done++;
+        }
+      } catch (e) {
+        console.warn("Erreur normalisation piste", t.name, e);
       }
-    } catch (e) {
-      console.warn("Erreur normalisation piste", t.name, e);
     }
+  } finally {
+    hideProgress();
   }
   pushHistory();
   renderTimeline();
@@ -6666,21 +6887,35 @@ async function normalizeAllTracks(includeEvents = false) {
 async function applyMixPreset(includeEvents = false) {
   const tracks = getTargetTracksForGlobalAction(includeEvents);
   if (tracks.length === 0) { showStatus("Aucune piste éligible.", 'info'); return; }
-  showStatus(`Mix podcast : traitement de ${tracks.length} piste${tracks.length > 1 ? 's' : ''}…`, 'info');
+  state._mixCancelled = false;
+  showProgress(`Mix podcast : traitement de ${tracks.length} piste${tracks.length > 1 ? 's' : ''}…`, 0, {
+    onCancel: () => { state._mixCancelled = true; },
+    cancelLabel: 'Annuler le mix'
+  });
   // 1. Activer la compression sur toutes les pistes ciblées (l'EQ reste géré séparément)
   for (const t of tracks) { t.compressed = true; }
   // 2. Normaliser chaque piste au loudness LUFS cible (Spotify -14)
   let done = 0;
-  for (const t of tracks) {
-    try {
-      const lufs = await computeTrackLUFS(t);
-      if (isFinite(lufs)) {
-        t.volume = gainFromLUFS(lufs);
-        done++;
+  try {
+    for (let idx = 0; idx < tracks.length; idx++) {
+      if (state._mixCancelled) { hideProgress(); showStatus('Mix annulé.', 'info'); renderTimeline(); return; }
+      const t = tracks[idx];
+      updateProgress(`Mix podcast : piste ${idx + 1}/${tracks.length} (${t.name})…`, (idx / tracks.length) * 100);
+      // Laisser le navigateur peindre l'overlay avant le calcul lourd
+      await new Promise(r => setTimeout(r, 0));
+      try {
+        const lufs = await computeTrackLUFS(t);
+        if (isFinite(lufs)) {
+          t.volume = gainFromLUFS(lufs);
+          done++;
+        }
+      } catch (e) {
+        console.warn("Erreur mix podcast piste", t.name, e);
       }
-    } catch (e) {
-      console.warn("Erreur mix podcast piste", t.name, e);
     }
+    updateProgress('Finalisation…', 100);
+  } finally {
+    hideProgress();
   }
   pushHistory();
   renderTimeline();
@@ -6994,7 +7229,11 @@ async function exportMix() {
   const chosenName = await promptExportFileName(defaultName);
   if (chosenName === null) return; // annulé
 
-  showProgress('Préparation du mixage…', 0);
+  state._exportCancelled = false;
+  showProgress('Préparation du mixage…', 0, {
+    onCancel: () => { state._exportCancelled = true; },
+    cancelLabel: 'Annuler l\'export'
+  });
   try {
     const sampleRate = state.audioCtx.sampleRate;
     const duration = state.take.duration + 0.5;
@@ -7062,10 +7301,11 @@ async function exportMix() {
       }
     }
 
-    showProgress('Rendu audio…', 10);
+    updateProgress('Rendu audio…', 10);
     const rendered = await offlineCtx.startRendering();
+    if (state._exportCancelled) { hideProgress(); showStatus('Export annulé.', 'info'); return; }
 
-    showProgress('Conversion MP3…', 50);
+    updateProgress('Conversion MP3…', 50);
     await new Promise(r => setTimeout(r, 50));
 
     const kbps = 192;
@@ -7081,7 +7321,8 @@ async function exportMix() {
       const buf = right ? encoder.encodeBuffer(lc, right.subarray(i, i + blockSize)) : encoder.encodeBuffer(lc);
       if (buf.length > 0) mp3Data.push(buf);
       if ((i / blockSize) % 800 === 0) {
-        showProgress('Conversion MP3…', 50 + (i / total) * 50);
+        if (state._exportCancelled) { hideProgress(); showStatus('Export annulé.', 'info'); return; }
+        updateProgress('Conversion MP3…', 50 + (i / total) * 50);
         await new Promise(r => setTimeout(r, 0));
       }
     }
@@ -7093,7 +7334,7 @@ async function exportMix() {
     const safeName = (chosenName || defaultName).replace(/[<>:"/\\|?*]/g, '_').trim() || defaultName;
     const baseName = safeName;
 
-    showProgress('Terminé', 100);
+    updateProgress('Terminé', 100);
     await new Promise(r => setTimeout(r, 200));
     hideProgress();
 
@@ -7135,13 +7376,62 @@ function float32ToInt16(f32) {
   return i16;
 }
 
-function showProgress(label, pct) {
+// Affiche l'overlay de progression.
+// - label : texte affiché
+// - pct : pourcentage (0-100), ou null/undefined pour un mode "indéterminé" (juste le spinner)
+// - opts.onCancel : si fourni, affiche un bouton Annuler qui appelle cette fonction
+//                   opts.cancelLabel personnalise le texte du bouton
+function showProgress(label, pct, opts = {}) {
   document.getElementById('progressOverlay').classList.add('visible');
   document.getElementById('progressLabel').textContent = label;
-  document.getElementById('progressFill').style.width = pct + '%';
-  document.getElementById('progressDetail').textContent = Math.round(pct) + '%';
+  const fill = document.getElementById('progressFill');
+  const detail = document.getElementById('progressDetail');
+  const bar = fill.parentElement;
+  if (pct == null || isNaN(pct)) {
+    // Mode indéterminé : on masque la barre chiffrée, le spinner suffit à montrer l'activité
+    bar.style.display = 'none';
+    detail.textContent = '';
+  } else {
+    bar.style.display = '';
+    fill.style.width = pct + '%';
+    detail.textContent = Math.round(pct) + '%';
+  }
+  // Bouton Annuler
+  const cancelBtn = document.getElementById('progressCancel');
+  // Nettoyer un éventuel handler précédent en clonant le bouton
+  const fresh = cancelBtn.cloneNode(true);
+  cancelBtn.parentNode.replaceChild(fresh, cancelBtn);
+  if (typeof opts.onCancel === 'function') {
+    fresh.classList.remove('hidden');
+    fresh.textContent = opts.cancelLabel || 'Annuler';
+    fresh.addEventListener('click', () => {
+      try { opts.onCancel(); } finally { hideProgress(); }
+    });
+  } else {
+    fresh.classList.add('hidden');
+  }
 }
-function hideProgress() { document.getElementById('progressOverlay').classList.remove('visible'); }
+
+// Met à jour seulement le label et le pourcentage sans toucher au bouton (pour les boucles).
+function updateProgress(label, pct) {
+  if (!document.getElementById('progressOverlay').classList.contains('visible')) return;
+  if (label != null) document.getElementById('progressLabel').textContent = label;
+  const fill = document.getElementById('progressFill');
+  const detail = document.getElementById('progressDetail');
+  const bar = fill.parentElement;
+  if (pct == null || isNaN(pct)) {
+    bar.style.display = 'none'; detail.textContent = '';
+  } else {
+    bar.style.display = ''; fill.style.width = pct + '%'; detail.textContent = Math.round(pct) + '%';
+  }
+}
+
+function hideProgress() {
+  document.getElementById('progressOverlay').classList.remove('visible');
+  // Réafficher la barre par défaut pour les prochains usages
+  const fill = document.getElementById('progressFill');
+  if (fill) fill.parentElement.style.display = '';
+}
 
 // ===================== WAV encoding (pour pads créés à partir d'extraits) =====================
 function audioBufferToWavBlob(buffer) {
@@ -7771,13 +8061,23 @@ async function buildProjectZip(name) {
     const wavBytes = audioBufferToWavBytes(buf);
     zip.file(`voice/${bid}.wav`, wavBytes);
   }
-  // Génère un blob ZIP avec deflate (compression standard)
+  // Génère un blob ZIP SANS compression (STORE). L'audio WAV ne se compresse quasiment pas
+  // (gain 5-10%) mais DEFLATE sur des dizaines de Mo bloque le navigateur plusieurs minutes.
+  // STORE = écriture quasi instantanée, pour un fichier à peine plus gros.
   const blob = await zip.generateAsync({
     type: 'blob',
-    compression: 'DEFLATE',
-    compressionOptions: { level: 6 }, // niveau standard, bon compromis vitesse/compression
+    compression: 'STORE',
+  }, (meta) => {
+    // Callback de progression : met à jour l'éventuelle barre/indicateur de sauvegarde
+    if (typeof updateSaveProgress === 'function') updateSaveProgress(meta.percent);
   });
   return { blob, metadata };
+}
+
+// Hook de progression de sauvegarde (peut être remplacé par l'UI). Par défaut, log discret.
+function updateSaveProgress(percent) {
+  const el = document.getElementById('saveProgressText');
+  if (el) el.textContent = `Sauvegarde : ${Math.round(percent)}%`;
 }
 
 // Encode un AudioBuffer en bytes WAV (Uint8Array) PCM 16-bit
@@ -8110,7 +8410,10 @@ document.getElementById('saveProjectCancel').addEventListener('click', () => doc
 document.getElementById('saveProjectOk').addEventListener('click', async () => {
   const name = document.getElementById('saveProjectName').value.trim() || 'Projet sans nom';
   document.getElementById('saveProjectModal').classList.remove('visible');
-  showProgress('Sauvegarde du projet…', 30);
+  showProgress('Sauvegarde du projet…', null, {
+    onCancel: () => { showStatus('Fenêtre fermée. La sauvegarde peut continuer en arrière-plan.', 'info'); },
+    cancelLabel: 'Fermer'
+  });
   try {
     await saveProjectToDB(name);
   } catch (e) { showStatus('Erreur : ' + e.message, 'error'); }
@@ -8119,7 +8422,10 @@ document.getElementById('saveProjectOk').addEventListener('click', async () => {
 document.getElementById('saveProjectDownload').addEventListener('click', async () => {
   const name = document.getElementById('saveProjectName').value.trim() || 'Projet';
   document.getElementById('saveProjectModal').classList.remove('visible');
-  showProgress('Génération du fichier .mixo…', 30);
+  showProgress('Génération du fichier .mixo…', null, {
+    onCancel: () => { showStatus('Fenêtre fermée. La génération peut continuer en arrière-plan.', 'info'); },
+    cancelLabel: 'Fermer'
+  });
   try {
     await downloadProjectFile(name);
   } catch (e) { showStatus('Erreur : ' + e.message, 'error'); }
@@ -8179,7 +8485,7 @@ async function openProjectFromDB(id) {
   req.onsuccess = async () => {
     const p = req.result; if (!p) return;
     document.getElementById('loadProjectModal').classList.remove('visible');
-    showProgress('Chargement du projet…', 30);
+    showProgress('Chargement du projet…', null);
     try {
       let data;
       if (p.zip && p.version >= 4) {
@@ -8364,12 +8670,70 @@ document.addEventListener('keydown', e => {
     let current;
     if (state.playback.active) {
       current = state.playback.startAtTime + (state.audioCtx.currentTime - state.playback.startCtxTime);
+    } else if (state._pendingSeekTime != null) {
+      // Un seek est déjà en attente (appuis rapides) : on cumule à partir de cette position
+      current = state._pendingSeekTime;
+    } else {
+      current = state.playback.startAtTime || 0;
+    }
+    const newT = Math.max(0, Math.min(state.take.duration, current + delta));
+
+    // Déplacer le playhead visuellement TOUT DE SUITE (léger, pas de reconstruction)
+    const ph = document.getElementById('playhead');
+    if (ph) { ph.classList.add('visible'); ph.style.left = (TRACK_HEAD_W + newT * state.zoomPxPerSec) + 'px'; }
+    // Auto-scroll pour suivre le playhead
+    const container = document.getElementById('timelineContainer');
+    if (container) {
+      const x = TRACK_HEAD_W + newT * state.zoomPxPerSec;
+      if (x < container.scrollLeft + 80) container.scrollLeft = Math.max(0, x - 80);
+      else if (x > container.scrollLeft + container.clientWidth - 80) container.scrollLeft = x - container.clientWidth + 80;
+    }
+
+    if (state.playback.active) {
+      // Pendant la lecture : ne pas relancer playMix() à CHAQUE appui (coûteux : reconstruit
+      // toute la chaîne audio). On mémorise la cible et on relance une seule fois quand les
+      // appuis se calment (debounce ~180ms). Le son se met en pause le temps du seek.
+      state._pendingSeekTime = newT;
+      // Couper le son immédiatement pour éviter qu'il continue à l'ancienne position
+      if (!state._seekPausedSources) {
+        state.playback.sources.forEach(s => { try { s.stop(); } catch(err){} });
+        state.playback.sources = [];
+        state._seekPausedSources = true;
+      }
+      if (state._seekDebounce) clearTimeout(state._seekDebounce);
+      state._seekDebounce = setTimeout(() => {
+        const target = state._pendingSeekTime;
+        state._pendingSeekTime = null;
+        state._seekDebounce = null;
+        state._seekPausedSources = false;
+        // Relancer proprement la lecture depuis la cible
+        if (state.playback.rafId) cancelAnimationFrame(state.playback.rafId);
+        state.playback.active = false;
+        state.playback.startAtTime = target;
+        playMix({ keepLastPlayedFrom: true });
+      }, 180);
+    } else {
+      // À l'arrêt : simple déplacement du point de lecture (déjà léger)
+      state.playback.startAtTime = newT;
+      updateMixDurationDisplay();
+    }
+    return;
+  }
+  // (ancien bloc flèches remplacé ci-dessus)
+  if (false && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')
+      && !e.ctrlKey && !e.metaKey
+      && state.take
+      && !document.getElementById('editorPanel').classList.contains('hidden')) {
+    e.preventDefault();
+    const delta = (e.key === 'ArrowRight') ? 3 : -3;
+    let current;
+    if (state.playback.active) {
+      current = state.playback.startAtTime + (state.audioCtx.currentTime - state.playback.startCtxTime);
     } else {
       current = state.playback.startAtTime || 0;
     }
     const newT = Math.max(0, Math.min(state.take.duration, current + delta));
     setPlayheadTime(newT); // gère aussi le redémarrage de la lecture si elle était active
-    // Auto-scroll pour suivre le playhead s'il sort de la zone visible
     const container = document.getElementById('timelineContainer');
     if (container) {
       const x = TRACK_HEAD_W + newT * state.zoomPxPerSec;
@@ -8539,7 +8903,7 @@ function setupFloatingInspector() {
 
 // ===================== AUTO-SAVE & NETTOYAGE =====================
 const AUTOSAVE_NAME_PREFIX = '💾 Auto — ';
-const AUTOSAVE_INTERVAL_MS = 30000;
+const AUTOSAVE_INTERVAL_MS = 60000; // 60s : compromis sécurité / charge (STORE rend l'opération rapide)
 const OLD_PROJECT_BANK_PATTERN = /^📂 /;
 
 // Au démarrage : nettoyer les anciennes banques "📂 ..." qui traînaient de l'ancien modèle
@@ -8608,7 +8972,7 @@ async function offerResumeAutoSave() {
   const date = lastAutoSave.createdAt ? new Date(lastAutoSave.createdAt).toLocaleString('fr-FR') : '?';
   const ok = confirm(`Une session non sauvegardée du ${date} est disponible.\n\nReprendre ?`);
   if (ok) {
-    showProgress('Reprise de la session…', 30);
+    showProgress('Reprise de la session…', null);
     try {
       let data;
       if (lastAutoSave.zip && lastAutoSave.version >= 4) {
