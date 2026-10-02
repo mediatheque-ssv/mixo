@@ -5116,8 +5116,9 @@ function updateSelectionToolbar() {
   const clipSeul = !zone && !!getSingleSelectedVoiceClip();
   const pader = zone || clipSeul;
   tb.querySelectorAll('button').forEach(b => {
-    const estPader = (b.id === 'btnSelCopy' || b.id === 'btnSelCut');
-    b.disabled = estPader ? !pader : !zone;
+    // Ces actions acceptent aussi un clip entier sélectionné, pas seulement une zone.
+    const surClipAussi = (b.id === 'btnSelCopy' || b.id === 'btnSelCut' || b.id === 'btnSelMute');
+    b.disabled = surClipAussi ? !pader : !zone;
   });
   info.classList.toggle('vide', !zone && !clipSeul);
   info.textContent = zone
@@ -5926,8 +5927,22 @@ function getSingleSelectedVoiceClip() {
 
 async function applySelectionAction(action) {
   let sel = state.voiceSelection;
+  const pasDeZone = !sel || sel.end - sel.start < 0.05;
+
+  // Sans zone sélectionnée, "Silencer" bascule simplement l'état muet du clip sélectionné.
+  // (Inutile de le découper : un clip a déjà sa propre propriété "muet".)
+  if (pasDeZone && action === 'mute') {
+    const f = getSingleSelectedVoiceClip();
+    if (!f) return;
+    f.clip.muted = !f.clip.muted;
+    pushHistory();
+    renderTimeline();
+    showStatus(f.clip.muted ? 'Clip silencé' : 'Clip réactivé', 'info');
+    return;
+  }
+
   // Pas de zone sélectionnée : pour "Pader", on retombe sur le clip sélectionné en entier.
-  if ((!sel || sel.end - sel.start < 0.05) && (action === 'copyToPad' || action === 'cutToPad')) {
+  if (pasDeZone && (action === 'copyToPad' || action === 'cutToPad')) {
     const f = getSingleSelectedVoiceClip();
     if (f) {
       const c = f.clip;
@@ -8765,6 +8780,8 @@ document.addEventListener('keydown', e => {
   }
   if (e.key === 'm' || e.key === 'M') {
     if (state.voiceSelection) { e.preventDefault(); applySelectionAction('mute'); return; }
+    // Pas de zone : silencer le clip sélectionné (même logique que le bouton Silencer)
+    if (getSingleSelectedVoiceClip()) { e.preventDefault(); applySelectionAction('mute'); return; }
   }
   if (e.key === 'Delete' || e.key === 'Backspace') {
     if (state.voiceSelection) { applySelectionAction('delete'); return; }
