@@ -691,7 +691,7 @@
     text-transform: uppercase; letter-spacing: 1px;
     /* Largeur fixe : le texte change selon la sélection, mais la barre ne doit jamais
        changer de taille (sinon elle peut passer sur deux lignes et tout décaler). */
-    width: 210px; flex: 0 0 210px;
+    width: 150px; flex: 0 0 150px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .selection-toolbar-info.vide { color: var(--text-soft); opacity: 0.5; }
@@ -1673,17 +1673,16 @@
         </svg>
         Pader
       </button>
-      <button id="btnSelCut" class="btn-with-icon" title="Pader &amp; couper : créer un pad et retirer la zone (Ctrl+Maj+X)" disabled>
+      <button id="btnSelCut" class="btn-with-icon" title="Pader en coupant : créer un pad et retirer la zone de la timeline (Ctrl+Maj+X)" disabled>
         <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="4" cy="4" r="2"/>
           <circle cx="4" cy="12" r="2"/>
           <path d="M5.5 5.5 14 14"/>
           <path d="M5.5 10.5 14 2"/>
         </svg>
-        Pader &amp; couper
+        Pader
       </button>
       <button id="btnSelDelete" class="danger" title="Supprimer la sélection (Suppr)" disabled>Supprimer</button>
-      <button id="btnSelClear" title="Annuler la sélection (Échap)" disabled>Désélectionner</button>
     </span>
 
     <div id="editorTimer" class="timer">00:00</div>
@@ -5104,6 +5103,7 @@ function refreshSelectionVisual() {
   });
   // Garder l'inspecteur et la barre de sélection cohérents
   renderInspector();
+  updateSelectionToolbar();
 }
 
 function updateSelectionToolbar() {
@@ -5111,13 +5111,18 @@ function updateSelectionToolbar() {
   const info = document.getElementById('selectionInfo');
   if (!tb || !info) return;
   const sel = state.voiceSelection;
-  const actif = !!sel && (sel.end - sel.start) >= 0.05;
-  // Les boutons restent en place : on les active ou on les grise.
-  tb.querySelectorAll('button').forEach(b => { b.disabled = !actif; });
-  info.classList.toggle('vide', !actif);
-  info.textContent = actif
-    ? `${formatTime(sel.start)} → ${formatTime(sel.end)} (${(sel.end - sel.start).toFixed(2)}s)`
-    : 'Aucune sélection';
+  const zone = !!sel && (sel.end - sel.start) >= 0.05;
+  // Les boutons "Pader" acceptent aussi un clip entier sélectionné, pas seulement une zone.
+  const clipSeul = !zone && !!getSingleSelectedVoiceClip();
+  const pader = zone || clipSeul;
+  tb.querySelectorAll('button').forEach(b => {
+    const estPader = (b.id === 'btnSelCopy' || b.id === 'btnSelCut');
+    b.disabled = estPader ? !pader : !zone;
+  });
+  info.classList.toggle('vide', !zone && !clipSeul);
+  info.textContent = zone
+    ? `${formatTime(sel.start)}→${formatTime(sel.end)} ${(sel.end - sel.start).toFixed(1)}s`
+    : (clipSeul ? 'Clip entier' : 'Aucune sélection');
 }
 
 function removeVoiceClip(id, opts = {}) {
@@ -5906,10 +5911,29 @@ document.getElementById('btnSelSplit').addEventListener('click', splitAtPlayhead
 document.getElementById('btnSelCut').addEventListener('click', () => applySelectionAction('cutToPad'));
 document.getElementById('btnSelCopy').addEventListener('click', () => applySelectionAction('copyToPad'));
 document.getElementById('btnSelDelete').addEventListener('click', () => applySelectionAction('delete'));
-document.getElementById('btnSelClear').addEventListener('click', () => { state.voiceSelection = null; renderTimeline(); });
+
+// Renvoie le clip voix sélectionné quand il y en a exactement un, sinon null.
+// Sert aux actions "Pader", qui peuvent s'appliquer à un clip entier et pas seulement
+// à une zone sélectionnée au curseur.
+function getSingleSelectedVoiceClip() {
+  const items = (state.selection && state.selection.length)
+    ? state.selection
+    : (state.selectedKind === 'voice' && state.selectedId ? [{ kind: 'voice', id: state.selectedId }] : []);
+  const voix = items.filter(s => s.kind === 'voice');
+  if (voix.length !== 1) return null;
+  return findClipById(voix[0].id) || null;
+}
 
 async function applySelectionAction(action) {
-  const sel = state.voiceSelection;
+  let sel = state.voiceSelection;
+  // Pas de zone sélectionnée : pour "Pader", on retombe sur le clip sélectionné en entier.
+  if ((!sel || sel.end - sel.start < 0.05) && (action === 'copyToPad' || action === 'cutToPad')) {
+    const f = getSingleSelectedVoiceClip();
+    if (f) {
+      const c = f.clip;
+      sel = { start: c.time, end: c.time + (c.sourceEnd - c.sourceStart), clipId: c.id };
+    }
+  }
   if (!sel || sel.end - sel.start < 0.05) return;
   // Trouver le clip contenant la sélection (toutes pistes voix)
   let foundClip = null;
