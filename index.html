@@ -672,11 +672,19 @@
   .editor-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
   .editor-toolbar .timer { margin-left: auto; }
   .selection-toolbar {
+    /* Barre flottante : elle NE DOIT PAS occuper de place dans le flux.
+       Avant, elle s'insérait au-dessus de la timeline et la poussait de ~67 px vers le bas
+       au moment même où la sélection apparaissait (pendant le glissement). Le clip passait
+       alors sous le curseur, le relâchement tombait à côté, et la sélection était perdue. */
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: 22px; z-index: 60;
     display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
-    margin-bottom: 12px; padding: 10px 12px;
+    padding: 10px 14px;
     background: #232220;
-    border: 1px solid var(--border-soft);
-    border-radius: 5px;
+    border: 1px solid var(--brass);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.55);
+    max-width: calc(100vw - 32px);
   }
   .selection-toolbar.hidden { display: none; }
   .selection-toolbar-info {
@@ -5732,7 +5740,20 @@ document.getElementById('btnZoomFit').addEventListener('click', () => {
 });
 
 // Clic sur la règle ou dans le vide de la timeline → repositionne playhead
+// Position du dernier mousedown : sert à distinguer un vrai clic d'une fin de glissement.
+// Quand on sélectionne une zone en partant d'un clip et qu'on relâche en dehors (au-delà de
+// la fin du clip, par exemple), le navigateur envoie un "click" dont la cible est l'ancêtre
+// commun, donc le fond de la timeline : sans ce garde-fou, la sélection qu'on vient de faire
+// était immédiatement effacée.
+let _mouseDownPos = null;
+document.addEventListener('mousedown', (e) => { _mouseDownPos = { x: e.clientX, y: e.clientY }; }, true);
+
 function timelineBackgroundClick(e) {
+  // Fin de glissement (la souris a bougé) : ce n'est pas un clic sur le fond, on ignore.
+  if (_mouseDownPos) {
+    const moved = Math.abs(e.clientX - _mouseDownPos.x) + Math.abs(e.clientY - _mouseDownPos.y);
+    if (moved > 5) return;
+  }
   if (e.target.closest('.event-block') || e.target.closest('.voice-clip')) return;
   if (e.target.closest('.track-head')) return; // ne pas réagir sur les headers de pistes
   if (e.target.closest('button') || e.target.closest('input')) return;
