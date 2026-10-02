@@ -2722,6 +2722,8 @@ function pushHistory() {
     return;
   }
   state.history.stack.push(snap);
+  // Compteur de révision : sert à l'auto-save pour savoir si quelque chose a changé
+  state._editRev = (state._editRev || 0) + 1;
   if (state.history.stack.length > state.history.max) state.history.stack.shift();
   state.history.index = state.history.stack.length - 1;
   updateHistoryButtons();
@@ -3082,7 +3084,13 @@ async function startRecording() {
   } catch (e) { showStatus('Format non supporté.', 'error'); return; }
   state.micRecorder.ondataavailable = e => { if (e.data.size > 0) state.micChunks.push(e.data); };
   state.micRecorder.onstop = onRecordingStop;
-  state.micRecorder.start(100);
+  // IMPORTANT : on utilise un grand timeslice (5 s) plutôt que 100 ms.
+  // Avec 100 ms, le callback ondataavailable se déclenche 10x/seconde sur le thread principal ;
+  // si le montage/la lecture sature ce thread, MediaRecorder prend du retard et PERD des morceaux
+  // -> trous dans l'enregistrement. Un grand timeslice laisse MediaRecorder gérer sa capture de
+  // façon autonome (buffer interne), donc plus de trous même quand l'UI rame. On garde 5 s (au lieu
+  // de rien du tout) pour limiter la perte en cas de plantage en cours de prise.
+  state.micRecorder.start(5000);
 
   state.isRecording = true; state.isPaused = false;
   state.startTime = performance.now();
@@ -4010,6 +4018,28 @@ function getTimelineWidth() {
   return Math.max(400, TRACK_HEAD_W + (state.take.duration + TIMELINE_EXTRA_SECONDS) * state.zoomPxPerSec);
 }
 
+// ===================== Virtualisation de la timeline =====================
+// On ne construit dans le DOM que les clips/bruitages réellement visibles à l'écran
+// (plus une marge de sécurité de part et d'autre). Sur un projet long, cela évite de
+// créer des centaines d'éléments et de canvas que personne ne regarde.
+const VIRT_MARGIN_PX = 600; // marge de chaque côté : pré-rendu pour un défilement fluide
+
+function getVisibleTimeRange() {
+  const container = document.getElementById('timelineContainer');
+  // Pas de conteneur (ou pas encore affiché) : on ne filtre rien, on rend tout.
+  if (!container || !container.clientWidth) return { start: -Infinity, end: Infinity };
+  const z = state.zoomPxPerSec || 1;
+  // scrollLeft est en pixels depuis le début de la timeline (qui inclut la bande latérale)
+  const leftPx = container.scrollLeft - TRACK_HEAD_W - VIRT_MARGIN_PX;
+  const rightPx = container.scrollLeft - TRACK_HEAD_W + container.clientWidth + VIRT_MARGIN_PX;
+  return { start: leftPx / z, end: rightPx / z };
+}
+
+// Vrai si l'intervalle [tStart, tEnd] croise la fenêtre visible
+function isTimeRangeVisible(tStart, tEnd, view) {
+  return tEnd >= view.start && tStart <= view.end;
+}
+
 // Wrapper qui regroupe (coalesce) les appels multiples à renderTimeline dans un même cycle.
 // Beaucoup d'actions appellent renderTimeline plusieurs fois de suite (recompute + history +
 // render) ; on n'exécute le vrai rendu qu'une fois, à la prochaine frame.
@@ -4026,14 +4056,13 @@ function renderTimeline() {
 function renderTimelineNow() {
   if (!state.take) return;
   // Cohérence sélection : si un élément principal est défini mais pas dans la sélection multi,
-  // on (re)synchronise. Cas du code legacy qui set juste selectedKind/Id.
-  if (state.selectedKind && state.selectedId) {
-    if (!state.selection || !state.selection.some(s => s.kind === state.selectedKind && s.id === state.selectedId)) {
-      state.selection = [{ kind: state.selectedKind, id: state.selectedId }];
-    }
-  } else if (!state.selection || state.selection.length === 0) {
-    state.selection = [];
+  // Synchronisation sélection : on ne (re)construit state.selection à partir de selectedKind/Id
+  // QUE si la multi-sélection est vide. Sinon on risque de réduire/casser une multi-sélection
+  // en cours quand un renderTimeline complet se déclenche (ex: après un lag / action asynchrone).
+  if ((!state.selection || state.selection.length === 0) && state.selectedKind && state.selectedId) {
+    state.selection = [{ kind: state.selectedKind, id: state.selectedId }];
   }
+  if (!state.selection) state.selection = [];
   const w = getTimelineWidth();
   document.getElementById('timelineInner').style.width = w + 'px';
   document.getElementById('timelineRuler').style.width = w + 'px';
@@ -4064,7 +4093,12 @@ function renderRuler(w) {
   const candidates = [0.5, 1, 2, 5, 10, 30, 60];
   let step = 1;
   for (const c of candidates) { if (c * state.zoomPxPerSec >= 50) { step = c; break; } }
-  for (let t = 0; t <= dur; t += step) {
+  // Virtualisation : ne créer que les graduations visibles (sinon plusieurs milliers
+  // d'éléments sont générés sur un projet long, pour rien).
+  const view = getVisibleTimeRange();
+  const tStart = Math.max(0, Math.floor(view.start / step) * step);
+  const tEnd = Math.min(dur, view.end);
+  for (let t = tStart; t <= tEnd; t += step) {
     const x = TRACK_HEAD_W + t * state.zoomPxPerSec;
     const tick = document.createElement('div');
     tick.className = 'ruler-tick'; tick.style.left = x + 'px';
@@ -4388,10 +4422,13 @@ function closeTrackColorPopover() {
 
 // === Rendu des clips voix dans une piste ===
 function renderVoiceClipsInTrack(container, track) {
+  const view = getVisibleTimeRange();
   track.clips.forEach(clip => {
    try {
     const dur = clip.sourceEnd - clip.sourceStart;
     if (dur <= 0) return;
+    // Virtualisation : on ignore les clips entièrement hors de la zone visible
+    if (!isTimeRangeVisible(clip.time, clip.time + dur, view)) return;
     const left = clip.time * state.zoomPxPerSec;
     const width = dur * state.zoomPxPerSec;
     const el = document.createElement('div');
@@ -4928,13 +4965,20 @@ function setupVoiceClipInteraction(el, clip, track) {
       // On ne re-render PAS tout (pour préserver le DOM et permettre le dblclick)
       if (state.voiceSelection) {
         state.voiceSelection = null;
+        renderVoiceSelection(); // efface juste la surbrillance, sans reconstruire la timeline
       }
       updateMixDurationDisplay();
     } else if (state.voiceSelection && Math.abs(state.voiceSelection.end - state.voiceSelection.start) < 0.05) {
+      // Sélection trop petite : on l'annule (juste la surbrillance, pas tout le DOM)
       state.voiceSelection = null;
-      renderTimeline();
+      renderVoiceSelection();
+      updateSelectionToolbar();
     } else {
-      renderTimeline();
+      // Sélection valide : NE PAS reconstruire toute la timeline (ça effacerait la sélection
+      // via le rendu asynchrone). La surbrillance est déjà dessinée pendant le glissement ;
+      // on met juste à jour la barre d'outils de sélection.
+      renderVoiceSelection();
+      updateSelectionToolbar();
     }
     sel = null;
   }
@@ -5079,9 +5123,12 @@ function ensureEventTrim(ev) {
 }
 
 function renderEventsInTrack(container, track) {
+  const view = getVisibleTimeRange();
   track.events.forEach(ev => {
    try {
     ensureEventTrim(ev);
+    // Virtualisation : on ignore les bruitages entièrement hors de la zone visible
+    if (!isTimeRangeVisible(ev.time, ev.time + (ev.duration || 0), view)) return;
     const block = document.createElement('div');
     block.className = 'event-block'
       + (isItemSelected('event', ev.id) ? ' selected' : '')
@@ -5709,6 +5756,33 @@ function timelineBackgroundClick(e) {
   }
 }
 document.getElementById('timelineContainer').addEventListener('click', timelineBackgroundClick);
+
+// Virtualisation : quand on fait défiler, de nouveaux clips entrent dans la zone visible.
+// On redessine seulement si le défilement a dépassé une partie de la marge de pré-rendu,
+// pour ne pas relancer un rendu à chaque pixel de scroll.
+(function setupVirtualScrollRender() {
+  const container = document.getElementById('timelineContainer');
+  if (!container) return;
+  let lastRenderScroll = 0;
+  // Pendant un glissement (déplacement de clip, sélection à la souris), on ne redessine pas :
+  // reconstruire la timeline détruirait l'élément en cours de manipulation.
+  let mouseDown = false;
+  document.addEventListener('mousedown', () => { mouseDown = true; }, true);
+  document.addEventListener('mouseup', () => {
+    mouseDown = false;
+    // Rattraper le rendu si on a défilé pendant le glissement
+    if (state.take && Math.abs(container.scrollLeft - lastRenderScroll) >= VIRT_MARGIN_PX / 2) {
+      lastRenderScroll = container.scrollLeft;
+      renderTimeline();
+    }
+  }, true);
+  container.addEventListener('scroll', () => {
+    if (!state.take || mouseDown) return;
+    if (Math.abs(container.scrollLeft - lastRenderScroll) < VIRT_MARGIN_PX / 2) return;
+    lastRenderScroll = container.scrollLeft;
+    renderTimeline(); // déjà regroupé via requestAnimationFrame
+  }, { passive: true });
+})();
 
 // Reconstruit la chaîne EQ dans un slot existant, à chaud, sans interrompre la lecture.
 // Déconnecte les anciens nodes EQ et branche la nouvelle chaîne entre inputGain et outputGain.
@@ -8051,14 +8125,14 @@ async function buildProjectZip(name) {
   const zip = new JSZip();
   // metadata.json
   zip.file('metadata.json', JSON.stringify(metadata));
-  // Pads en WAV binaire
+  // Pads en WAV binaire (encodage mis en cache : inchangé d'une sauvegarde à l'autre)
   for (const [padId, buf] of padBuffers) {
-    const wavBytes = audioBufferToWavBytes(buf);
+    const wavBytes = audioBufferToWavBytesCached(buf);
     zip.file(`pads/${padId}.wav`, wavBytes);
   }
-  // Voice buffers en WAV binaire
+  // Voice buffers en WAV binaire (idem)
   for (const [bid, buf] of voiceBuffersMap) {
-    const wavBytes = audioBufferToWavBytes(buf);
+    const wavBytes = audioBufferToWavBytesCached(buf);
     zip.file(`voice/${bid}.wav`, wavBytes);
   }
   // Génère un blob ZIP SANS compression (STORE). L'audio WAV ne se compresse quasiment pas
@@ -8081,6 +8155,20 @@ function updateSaveProgress(percent) {
 }
 
 // Encode un AudioBuffer en bytes WAV (Uint8Array) PCM 16-bit
+// Cache des encodages WAV. Les buffers audio ne changent JAMAIS pendant le montage
+// (seules les métadonnées des clips bougent), mais chaque sauvegarde les ré-encodait
+// intégralement : ~2 s de blocage pour 18 min d'audio, répété à chaque auto-save.
+// On garde donc l'encodage par buffer et on le réutilise tel quel.
+const _wavBytesCache = new WeakMap();
+function audioBufferToWavBytesCached(buf) {
+  let bytes = _wavBytesCache.get(buf);
+  if (!bytes) {
+    bytes = audioBufferToWavBytes(buf);
+    _wavBytesCache.set(buf, bytes);
+  }
+  return bytes;
+}
+
 function audioBufferToWavBytes(buf) {
   const numChannels = buf.numberOfChannels;
   const sampleRate = buf.sampleRate;
@@ -8929,6 +9017,12 @@ function startAutoSave() {
   if (!state.autoSaveProjectId) state.autoSaveProjectId = uid('autosave');
   state.autoSaveTimer = setInterval(async () => {
     if (!state.take) return;
+    // Ne jamais sauvegarder pendant un enregistrement : le travail bloquerait le thread
+    // principal au pire moment et pourrait faire perdre des morceaux de la prise.
+    if (state.isRecording) return;
+    // Rien n'a changé depuis la dernière sauvegarde : inutile de tout refaire.
+    if (state._lastAutoSaveRev === state._editRev) return;
+    const revAtStart = state._editRev;
     try {
       const ts = new Date().toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
       const name = `${AUTOSAVE_NAME_PREFIX}${ts}`;
@@ -8941,6 +9035,7 @@ function startAutoSave() {
         version: 4,
         isAutoSave: true,
       });
+      state._lastAutoSaveRev = revAtStart;
     } catch (e) {
       console.warn('Auto-save failed', e);
     }
