@@ -4565,7 +4565,25 @@ function drawClipWaveform(canvas, clip, color, trackVol) {
   const maxTilePx = Math.floor(MAX_CANVAS_DIM / dpr);
 
   // Si le clip rentre dans un seul canvas, comportement classique AVEC cache
+  // Le clip a peut-être déjà été dessiné en tuiles (clip long) : on nous passe alors la
+  // PREMIÈRE tuile. C'est tout le conteneur qu'il faut remplacer, sinon on empile les tuiles.
+  let cible = canvas;
+  if (canvas.parentNode && canvas.parentNode.classList
+      && canvas.parentNode.classList.contains('voice-clip-canvas-tiles')) {
+    cible = canvas.parentNode;
+  }
+  const parentCible = cible.parentNode;
+  if (!parentCible) return;
+  const idClip = cible.dataset.clipCanvas || canvas.dataset.clipCanvas || clip.id;
+
   if (widthPx <= maxTilePx) {
+    if (cible.tagName !== 'CANVAS') {
+      // Retour d'un affichage en tuiles vers un canvas unique
+      const plain = document.createElement('canvas');
+      plain.dataset.clipCanvas = idClip;
+      parentCible.replaceChild(plain, cible);
+      canvas = plain;
+    }
     const key = waveformCacheKey(clip, widthPx, canvasHeight, dpr, effectiveGain, normalColor);
     const cached = _waveformCache.get(key);
     canvas.style.width = widthPx + 'px';
@@ -4595,11 +4613,10 @@ function drawClipWaveform(canvas, clip, color, trackVol) {
   // Sinon, on doit subdiviser en plusieurs tuiles. Le `canvas` passé devient juste un container :
   // on lui donne la bonne taille et on remplace son contenu par plusieurs <canvas> côte à côte.
   // Mais comme c'est un <canvas> à la base, on ne peut pas y mettre d'enfants. On le remplace par un <div>.
-  const parent = canvas.parentNode;
-  if (!parent) return;
+  const parent = parentCible;
   const container = document.createElement('div');
   container.className = 'voice-clip-canvas-tiles';
-  container.dataset.clipCanvas = canvas.dataset.clipCanvas;
+  container.dataset.clipCanvas = idClip;
   container.style.cssText = `position: relative; width: ${widthPx}px; height: ${canvasHeight}px; margin-top: 18px; display: flex;`;
 
   const nbTiles = Math.ceil(widthPx / maxTilePx);
@@ -4617,7 +4634,7 @@ function drawClipWaveform(canvas, clip, color, trackVol) {
     drawWaveformOnCanvas(tileCanvas, buf, srcStart, srcEnd, 0, tileWidth, canvasHeight, dpr, effectiveGain, normalColor, clipColor);
   }
 
-  parent.replaceChild(container, canvas);
+  parent.replaceChild(container, cible);
 }
 
 // Dessine une portion de waveform sur un canvas donné, sans gérer le tuilage.
@@ -5268,18 +5285,35 @@ function drawEventWaveform(canvas, ev, trackVol) {
 
   const maxTilePx = Math.floor(MAX_CANVAS_DIM / dpr);
 
+  // Le bruitage a peut-être déjà été dessiné en tuiles (bruitage long) : dans ce cas
+  // on nous passe la PREMIÈRE tuile, pas le canvas d'origine. C'est tout le conteneur
+  // de tuiles qu'il faut remplacer, sinon on empile des tuiles dans les tuiles.
+  let cible = canvas;
+  if (canvas.parentNode && canvas.parentNode.classList
+      && canvas.parentNode.classList.contains('event-canvas-tiles')) {
+    cible = canvas.parentNode;
+  }
+  const parent = cible.parentNode;
+  if (!parent) return;
+  const idEvent = cible.dataset.eventCanvas || canvas.dataset.eventCanvas || ev.id;
+
   // Cas simple : tient dans un seul canvas
   if (widthPx <= maxTilePx) {
-    drawWaveformOnCanvas(canvas, buf, srcStart, srcEnd, 0, widthPx, heightPx, dpr, effectiveGain, normalColor, clipColor);
+    let plain = cible;
+    if (cible.tagName !== 'CANVAS') {
+      // On revient d'un affichage en tuiles vers un canvas unique
+      plain = document.createElement('canvas');
+      plain.dataset.eventCanvas = idEvent;
+      parent.replaceChild(plain, cible);
+    }
+    drawWaveformOnCanvas(plain, buf, srcStart, srcEnd, 0, widthPx, heightPx, dpr, effectiveGain, normalColor, clipColor);
     return;
   }
 
-  // Sinon, on tuile : remplacer le canvas par un container avec plusieurs canvas
-  const parent = canvas.parentNode;
-  if (!parent) return;
+  // Sinon, on tuile : remplacer la cible par un container avec plusieurs canvas
   const container = document.createElement('div');
   container.className = 'event-canvas-tiles';
-  container.dataset.eventCanvas = canvas.dataset.eventCanvas;
+  container.dataset.eventCanvas = idEvent;
   container.style.cssText = `position: relative; width: ${widthPx}px; height: ${heightPx}px; display: flex;`;
 
   const nbTiles = Math.ceil(widthPx / maxTilePx);
@@ -5296,7 +5330,7 @@ function drawEventWaveform(canvas, ev, trackVol) {
     drawWaveformOnCanvas(tileCanvas, buf, tileSrcStart, tileSrcEnd, 0, tileWidth, heightPx, dpr, effectiveGain, normalColor, clipColor);
   }
 
-  parent.replaceChild(container, canvas);
+  parent.replaceChild(container, cible);
 }
 
 // Rognage des events : drag sur la poignée gauche modifie sourceStart, droite modifie sourceEnd.
