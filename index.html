@@ -4534,6 +4534,29 @@ const MAX_CANVAS_DIM = 8000;
 const _waveformCache = new Map();
 const _WAVEFORM_CACHE_MAX = 200; // limite mémoire : on garde au plus 200 waveforms en cache
 
+// Le facteur d'échelle de l'écran (devicePixelRatio) peut changer en cours de route :
+// zoom du navigateur (Ctrl+molette), fenêtre déplacée vers un écran de densité différente,
+// mise à l'échelle Windows modifiée. Les canvas déjà dessinés gardent alors leur ancienne
+// résolution — ondes floues — et surtout le découpage en tuiles ne correspond plus.
+// On redessine donc la timeline quand ça arrive.
+let _dprCourant = window.devicePixelRatio || 1;
+function surveillerDpr() {
+  if (!window.matchMedia) return;
+  let mq;
+  try { mq = window.matchMedia(`(resolution: ${_dprCourant}dppx)`); } catch (e) { return; }
+  const onChange = () => {
+    const nouveau = window.devicePixelRatio || 1;
+    if (nouveau === _dprCourant) return;
+    _dprCourant = nouveau;
+    _waveformCache.clear();
+    try { if (state.take) renderTimeline(); } catch (e) { console.warn('redessin après changement de dpr', e); }
+    surveillerDpr(); // se réabonner sur la nouvelle valeur
+  };
+  if (mq.addEventListener) mq.addEventListener('change', onChange, { once: true });
+  else if (mq.addListener) mq.addListener(onChange);
+}
+surveillerDpr();
+
 function waveformCacheKey(clip, widthPx, canvasHeight, dpr, effectiveGain, normalColor) {
   // Arrondir le gain et la largeur pour éviter des clés trop sensibles aux micro-variations
   return [
