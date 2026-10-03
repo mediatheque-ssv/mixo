@@ -4936,10 +4936,10 @@ function setupVoiceClipInteraction(el, clip, track) {
     // Position depuis l'origine de la timeline (corps du clip)
     const startT = mouseToTimelineX(e.clientX);
     sel = { startT, moved: false };
-    // Si le clip cliqué fait déjà partie d'une multi-sélection, on garde la sélection (= drag du groupe).
-    // Sinon, on remplace la sélection par ce seul clip.
-    if (!isItemSelected('voice', clip.id)) {
-      selectSingleItem('voice', clip.id);
+    // Le corps du clip sert UNIQUEMENT à sélectionner une zone : il ne sélectionne pas le clip.
+    // Pour sélectionner un clip, on clique sa barre laiton du haut.
+    if (state.selection && state.selection.length) {
+      clearSelection();
       refreshSelectionVisual();
     }
     state.activeTrackId = track.id;
