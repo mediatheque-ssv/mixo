@@ -5115,10 +5115,13 @@ function updateSelectionToolbar() {
   // Les boutons "Pader" acceptent aussi un clip entier sélectionné, pas seulement une zone.
   const clipSeul = !zone && !!getSingleSelectedVoiceClip();
   const pader = zone || clipSeul;
+  // "Supprimer" marche aussi sur n'importe quelle sélection d'éléments (clip ou bruitage, un ou plusieurs).
+  const supprimable = zone || getSelectionIds().length > 0;
   tb.querySelectorAll('button').forEach(b => {
     // Ces actions acceptent aussi un clip entier sélectionné, pas seulement une zone.
     const surClipAussi = (b.id === 'btnSelCopy' || b.id === 'btnSelCut' || b.id === 'btnSelMute');
-    b.disabled = surClipAussi ? !pader : !zone;
+    if (b.id === 'btnSelDelete') b.disabled = !supprimable;
+    else b.disabled = surClipAussi ? !pader : !zone;
   });
   info.classList.toggle('vide', !zone && !clipSeul);
   info.textContent = zone
@@ -5916,6 +5919,13 @@ document.getElementById('btnSelDelete').addEventListener('click', () => applySel
 // Renvoie le clip voix sélectionné quand il y en a exactement un, sinon null.
 // Sert aux actions "Pader", qui peuvent s'appliquer à un clip entier et pas seulement
 // à une zone sélectionnée au curseur.
+// Liste normalisée des éléments sélectionnés (clips voix et bruitages confondus).
+function getSelectionIds() {
+  if (state.selection && state.selection.length) return state.selection.slice();
+  if (state.selectedKind && state.selectedId) return [{ kind: state.selectedKind, id: state.selectedId }];
+  return [];
+}
+
 function getSingleSelectedVoiceClip() {
   const items = (state.selection && state.selection.length)
     ? state.selection
@@ -5938,6 +5948,22 @@ async function applySelectionAction(action) {
     pushHistory();
     renderTimeline();
     showStatus(f.clip.muted ? 'Clip silencé' : 'Clip réactivé', 'info');
+    return;
+  }
+
+  // Sans zone sélectionnée, "Supprimer" efface les éléments sélectionnés en entier
+  // (même comportement que la touche Suppr).
+  if (pasDeZone && action === 'delete') {
+    const items = getSelectionIds();
+    if (!items.length) return;
+    for (const s of items) {
+      if (s.kind === 'event') deleteEvent(s.id, { skipRender: true });
+      else if (s.kind === 'voice') removeVoiceClip(s.id, { skipRender: true });
+    }
+    clearSelection();
+    pushHistory();
+    renderTimeline();
+    showStatus(items.length > 1 ? `${items.length} éléments supprimés` : 'Clip supprimé', 'info');
     return;
   }
 
