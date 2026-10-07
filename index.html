@@ -1102,7 +1102,13 @@
     border-left: 1px solid rgba(212, 175, 55, 0.35);
     border-right: 1px solid rgba(212, 175, 55, 0.35);
   }
-  .event-block canvas { display: block; position: absolute; top: 18px; left: 0; pointer-events: none; opacity: 1; }
+  /* Le canvas unique est positionné en absolu sous la barre laiton. Le sélecteur doit
+     rester un enfant DIRECT : sinon il attrape aussi les tuiles d'un bruitage long,
+     qui se retrouvent toutes empilées à left:0 au lieu de se suivre. */
+  .event-block > canvas { display: block; position: absolute; top: 18px; left: 0; pointer-events: none; opacity: 1; }
+  .event-canvas-tiles { position: absolute; top: 18px; left: 0; display: flex; pointer-events: none; }
+  .event-canvas-tiles canvas { position: static; display: block; flex: 0 0 auto; pointer-events: none; }
+  .voice-clip-canvas-tiles canvas { position: static; display: block; flex: 0 0 auto; pointer-events: none; }
   /* Barre supérieure laiton commune aux events et aux voice clips */
   .event-block-handle {
     position: absolute; top: 0; left: 0; right: 0; height: 18px;
@@ -5337,7 +5343,8 @@ function drawEventWaveform(canvas, ev, trackVol) {
   const container = document.createElement('div');
   container.className = 'event-canvas-tiles';
   container.dataset.eventCanvas = idEvent;
-  container.style.cssText = `position: relative; width: ${widthPx}px; height: ${heightPx}px; display: flex;`;
+  // Même position que le canvas unique qu'il remplace : sous la barre laiton de 18 px.
+  container.style.cssText = `position: absolute; top: 18px; left: 0; width: ${widthPx}px; height: ${heightPx}px; display: flex;`;
 
   const nbTiles = Math.ceil(widthPx / maxTilePx);
   const dur_sec = srcEnd - srcStart;
