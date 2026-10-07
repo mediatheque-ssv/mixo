@@ -4581,7 +4581,8 @@ function drawClipWaveform(canvas, clip, color, trackVol) {
   const buf = getClipBuffer(clip);
   if (!canvas || !buf) return;
   const dur = clip.sourceEnd - clip.sourceStart;
-  const widthPx = Math.max(1, dur * state.zoomPxPerSec);
+  // Même largeur que le bloc qui l'accueille, bordures déduites.
+  const widthPx = Math.max(1, dur * state.zoomPxPerSec - BORDURES_CLIP);
   const dpr = window.devicePixelRatio || 1;
   const canvasHeight = VOICE_TRACK_HEIGHT - 18;
 
@@ -4665,6 +4666,18 @@ function drawClipWaveform(canvas, clip, color, trackVol) {
 
   parent.replaceChild(container, cible);
 }
+
+// Les blocs sont en box-sizing: border-box : leurs bordures latérales sont prises SUR
+// leur largeur, pas ajoutées autour. Dessiner l'onde à durée × zoom la fait donc déborder
+// de la largeur des bordures, et comme le bloc est en overflow: hidden, c'est la fin du
+// dessin qui disparaît. La perte est fixe en pixels, donc d'autant plus visible que le
+// bloc est étroit. On dessine à la largeur intérieure.
+//
+// On ne peut pas lire clientWidth : au moment du dessin le bloc n'est pas encore dans le
+// document (renderTracks l'assemble détaché), la mesure vaudrait 0. Ces constantes
+// doivent donc suivre le CSS — tilepos.js échoue si elles divergent.
+const BORDURES_EVENT = 4;  // 3 px à gauche (accent de couleur, posé en ligne) + 1 px à droite
+const BORDURES_CLIP = 2;   // 1 px de chaque côté
 
 // Dessine une portion de waveform sur un canvas donné, sans gérer le tuilage.
 // ===================== Cache de "peaks" par buffer =====================
@@ -5303,7 +5316,8 @@ function drawEventWaveform(canvas, ev, trackVol) {
   if (!canvas) return;
   const buf = state.padBuffers.get(ev.padId);
   if (!buf) return;
-  const widthPx = Math.max(1, ev.duration * state.zoomPxPerSec);
+  // Même largeur que le bloc qui l'accueille, bordures déduites.
+  const widthPx = Math.max(1, Math.max(20, ev.duration * state.zoomPxPerSec) - BORDURES_EVENT);
   const heightPx = 92;
   const dpr = window.devicePixelRatio || 1;
   const effectiveGain = (ev.volume ?? 1) * (trackVol ?? 1);
