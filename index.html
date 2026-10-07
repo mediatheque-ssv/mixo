@@ -5273,8 +5273,30 @@ function renderEventsInTrack(container, track) {
         renderTimeline();
         return;
       }
-      // Clic simple : si déjà dans la multi-sélection, on garde la sélection (= drag du groupe).
-      // Sinon, on remplace la sélection par ce seul event.
+      // Même règle que les clips voix : seule la barre laiton du haut sélectionne.
+      // Un clic dans le corps ne sélectionne pas, il place le curseur de lecture.
+      if (!e.target.closest('.event-block-handle')) {
+        if (e.target.closest('.event-trim-handle') || e.target.closest('button')) return;
+        if (state.selection && state.selection.length) {
+          clearSelection();
+          refreshSelectionVisual();
+        }
+        state.activeTrackId = track.id;
+        // Pas de playhead à la fin d'un glissement : ce n'était pas un clic.
+        if (_mouseDownPos) {
+          const bouge = Math.abs(e.clientX - _mouseDownPos.x) + Math.abs(e.clientY - _mouseDownPos.y);
+          if (bouge > 5) return;
+        }
+        if (!state.take) return;
+        const tClic = mouseToTimelineX(e.clientX);
+        if (tClic >= 0 && tClic <= state.take.duration + TIMELINE_EXTRA_SECONDS) {
+          setPlayheadTime(tClic);
+        }
+        return;
+      }
+
+      // Clic sur la barre laiton : si déjà dans la multi-sélection, on la garde (= drag du
+      // groupe). Sinon, on remplace la sélection par ce seul bruitage.
       if (!wasSelected) {
         selectSingleItem('event', ev.id);
       } else {
